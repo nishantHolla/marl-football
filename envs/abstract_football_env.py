@@ -2,6 +2,7 @@ from pettingzoo import ParallelEnv
 from gymnasium.spaces import Box, Discrete
 from render.viewer import Viewer
 import numpy as np
+import itertools
 
 class AbstractFootballEnv(ParallelEnv):
 	metadata = {
@@ -30,6 +31,7 @@ class AbstractFootballEnv(ParallelEnv):
 		self.positions = {}
 		self.ball = np.array([self.field_width // 2, self.field_height // 2], dtype=np.float32)
 		self.ball_velocity = np.array([0.0, 0.0], dtype=np.float32)
+		self.last_touch = None
 
 		self.goal_1 = [0, self.field_width // 2]
 		self.action_list = [
@@ -71,10 +73,12 @@ class AbstractFootballEnv(ParallelEnv):
 		self.infos = {agent: {} for agent in self.agents}
 
 		for agent, action in actions.items():
-			if action < 9:
-				self.positions[agent] += self.action_list[action]["motion"] * self.agent_speed
-			elif action == 9 and self._has_kicked_ball(agent):
+			self.positions[agent] += self.action_list[action]["motion"] * self.agent_speed
+
+			if action == 9 and self._can_kick_ball(agent):
+				self.last_touch = agent
 				kick_dir = self.ball - self.positions[agent]
+
 				if np.linalg.norm(kick_dir) > 0:
 					self.ball_velocity = kick_dir / np.linalg.norm(kick_dir) * 5.0
 					self.rewards[agent] += 1.0
@@ -84,13 +88,25 @@ class AbstractFootballEnv(ParallelEnv):
 
 		self._clip_positions()
 
+		team_reward = 0
+
 		if self.ball[0] < 0:
-			for agent in self.agents:
-				self.rewards[agent] += 10
-				self.terminations[agent] = True
+			team_reward += 10
+			self.ball = np.array([self.field_width // 2, self.field_height // 2], dtype=np.float32)
+
+		if self.last_touch is not None:
+			team_reward += 2
+
+		coverage_score = self._compute_team_coverage()
+		coverage_bonus = coverage_score * 0.01
+
+		for agent in self.agents:
+			dist_penalty = np.linalg.norm(self.positions[agent] - self.ball) * 0.01
+			self.rewards[agent] = team_reward - dist_penalty + coverage_bonus
 
 		self.observations = {agent: self._observe(agent) for agent in self.agents}
 		self.cycle_count += 1
+
 		return self.observations, self.rewards, self.terminations, self.truncations, self.infos
 
 
@@ -124,7 +140,10 @@ class AbstractFootballEnv(ParallelEnv):
 
 
 	def _observe(self, agent):
-		return np.concatenate([self.positions[agent], self.ball])
+		return np.concatenate([
+			self.positions[agent],
+			self.ball
+		])
 
 
 	def _get_random_postion(self):
@@ -134,8 +153,21 @@ class AbstractFootballEnv(ParallelEnv):
 		], dtype=np.float32)
 
 
-	def _has_kicked_ball(self, agent):
+	def _can_kick_ball(self, agent):
 		return (np.linalg.norm(self.positions[agent] - self.ball) < (self.ball_size + self.agent_size))
+
+
+	def _compute_team_coverage(self):
+		distances = []
+
+		for a1, a2 in itertools.combinations(self.agents, 2):
+			d = np.linalg.norm(self.positions[a1] - self.positions[a2])
+			distances.append(d)
+
+		if len(distances) == 0:
+			return 0.0
+
+		return sum(distances) / len(distances)
 
 
 def env():

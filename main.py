@@ -1,8 +1,8 @@
 from envs.abstract_football_env import AbstractFootballEnv
 import numpy as np
 
-env = AbstractFootballEnv(num_of_agents=10, field_width=1200)
-observations = env.reset()
+env = AbstractFootballEnv(num_of_agents=10, field_width=800, render_mode="human")
+observations, _ = env.reset()
 bp = env.ball
 
 while True:

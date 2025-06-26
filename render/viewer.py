@@ -19,13 +19,14 @@ class Viewer:
 		pygame.quit()
 
 
-	def render(self, agent_positions, ball_position):
+	def render(self, agent_positions, ball_position, goal_position, goal_size):
 		self.screen.blit(self.football_pitch_image, (0, 0))
 
 		for _, position in agent_positions.items():
 			self.screen.blit(self.agent_image, position - (self.agent_image.get_width()/2))
 
 		self.screen.blit(self.football_image, ball_position - (self.football_image.get_width()/2))
+		pygame.draw.rect(self.screen, "#dc143c", pygame.Rect(goal_position[0], goal_position[1], goal_size[0], goal_size[1]))
 		pygame.display.flip()
 
 

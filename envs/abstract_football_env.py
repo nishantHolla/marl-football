@@ -156,7 +156,9 @@ class AbstractFootballEnv(ParallelEnv):
 	def render(self, actions):
 		if self.render_mode == "human" and self.viewer is not None:
 			self._log_frame_info(actions)
-			self.viewer.render(self.positions, self.ball)
+			gp = [20, self.goal_zone[0][1]]
+			gs = [20, self.goal_width]
+			self.viewer.render(self.positions, self.ball, gp, gs)
 
 
 	def close(self):

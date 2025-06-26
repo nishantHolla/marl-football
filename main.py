@@ -1,12 +1,11 @@
-from envs.abstract_football_env import AbstractFootballEnv
+from envs.abstract_football_env_v1 import AbstractFootballEnv_V1
 import numpy as np
 
-env = AbstractFootballEnv(num_of_agents=2, field_width=800, render_mode="human")
+env = AbstractFootballEnv_V1(n_agents=5, field_width=800, render_mode="human")
 observations, _ = env.reset()
-bp = env.ball
 
 while True:
-	actions = {agent: np.random.randint(10) for agent in env.agents}
+	actions = {agent: np.random.randint(len(env.action_list)) for agent in env.agents}
 	observations, rewards, terminations, truncations, infos = env.step(actions)
 	env.render(actions)
 

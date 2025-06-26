@@ -1,13 +1,17 @@
+"""
+This version of AbstractFootballEnv is deprecated due to poor implementation of collisions.
+Please use AbstractFootballEnv_V1 or above.
+"""
 from pettingzoo import ParallelEnv
 from gymnasium.spaces import Box, Discrete
 from render.viewer import Viewer
 import numpy as np
 import itertools
 
-class AbstractFootballEnv(ParallelEnv):
+class AbstractFootballEnv_V0(ParallelEnv):
 	metadata = {
 		"render_modes": ["human", "none"],
-		"name": "abstract_footbal_env_v0"
+		"name": "abstract_football_env_v0"
 	}
 
 	def __init__(self, max_cycles=5, num_of_agents=2, field_width=800, render_mode="none"):

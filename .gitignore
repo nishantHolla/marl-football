@@ -1,2 +1,3 @@
 .marl-football/
 __pycache__/
+*.pth

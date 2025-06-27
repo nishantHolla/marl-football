@@ -61,8 +61,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			agent: Discrete(len(self.action_list)) for agent in self.agents
 		}
 
-		self.obsertvation_spaces = {
-			agent: Box(low=0, high=max(self.field_width, self.field_height), shape=(8 + 4 * (self.n_agents - 1),), dtype=np.float32)
+		self.observation_spaces = {
+			agent: Box(low=0, high=max(self.field_width, self.field_height), shape=(10 + 4 * (self.n_agents - 1),), dtype=np.float32)
 			for agent in self.agents
 		}
 
@@ -145,10 +145,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
 		self._calculate_rewards()
 		self.goal_scored = self._check_goal_scored()
-
-		if (goal_scored):
-			reset()
-			return
 
 		self.observations = { agent: self._observe(agent) for agent in self.agents }
 		self.frame_count += 1
@@ -399,6 +395,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			print(f"\t\ttotal                   : {self.rewards[agent]}")
 			print()
 			print(f"\tobservations     : {self.observations[agent].round(2)}")
+			print(f"\tlength of obs    : {len(self.observations[agent])}")
 			print(f"\tball inside goal : {self._check_goal_scored()}")
 
 		print(f"ball position : {self.ball_pos.round(2)}")

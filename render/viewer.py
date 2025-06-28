@@ -9,6 +9,37 @@ class Viewer:
 		self.field_height = options["field_height"]
 		self.agent_size = options["agent_size"]
 		self.ball_size = options["ball_size"]
+		self.goal_zone = options["goal_zone"]
+		self.goal_size = options["goal_size"]
+		self.goal_box_thickness = 10
+
+		self.goal_top_rect = pygame.Rect(
+			self.goal_zone["top_left"][0] - self.goal_box_thickness,
+			self.goal_zone["top_left"][1] - self.goal_box_thickness,
+			self.goal_size[0] + self.goal_box_thickness,
+			self.goal_box_thickness
+		)
+
+		self.goal_bottom_rect = pygame.Rect(
+			self.goal_zone["bottom_left"][0] - self.goal_box_thickness,
+			self.goal_zone["bottom_left"][1],
+			self.goal_size[0] + self.goal_box_thickness,
+			self.goal_box_thickness
+		)
+
+		self.goal_middle_rect = pygame.Rect(
+			self.goal_zone["top_left"][0] - self.goal_box_thickness,
+			self.goal_zone["top_left"][1],
+			self.goal_box_thickness,
+			self.goal_size[1]
+		)
+
+		self.goal_inner_rect = pygame.Rect(
+			self.goal_zone["top_left"][0],
+			self.goal_zone["top_left"][1],
+			self.goal_size[0],
+			self.goal_size[1]
+		)
 
 		self.screen = pygame.display.set_mode((self.field_width, self.field_height))
 		self.clock = pygame.time.Clock()
@@ -19,14 +50,25 @@ class Viewer:
 		pygame.quit()
 
 
-	def render(self, agent_positions, ball_position, goal_position, goal_size):
+	def render(self, agent_positions, ball_position):
+		# Draw the ground image
 		self.screen.blit(self.football_pitch_image, (0, 0))
 
+		# Draw goal
+		goal_width = 5
+		pygame.draw.rect(self.screen, "white", self.goal_bottom_rect)
+		pygame.draw.rect(self.screen, "white", self.goal_top_rect)
+		pygame.draw.rect(self.screen, "white", self.goal_middle_rect)
+		pygame.draw.rect(self.screen, "#aaaaaa", self.goal_inner_rect)
+
+		# Draw agents
 		for _, position in agent_positions.items():
 			self.screen.blit(self.agent_image, position - (self.agent_image.get_width()/2))
 
+		# Draw football
 		self.screen.blit(self.football_image, ball_position - (self.football_image.get_width()/2))
-		pygame.draw.rect(self.screen, "#dc143c", pygame.Rect(goal_position[0], goal_position[1], goal_size[0], goal_size[1]))
+
+		# Update display
 		pygame.display.flip()
 
 

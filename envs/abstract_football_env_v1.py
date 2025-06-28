@@ -23,9 +23,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
 		self.ball_push_strength = 1.0
 		self.ball_friction = 0.95
 
-		self.viewer = None
-		self._init_viewer()
-
 		self.possible_agents = [f"agent_{i}" for i in range(self.n_agents)]
 		self.agents = self.possible_agents[:]
 		self.agent_pos = {}
@@ -66,6 +63,9 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			for agent in self.agents
 		}
 
+		self.viewer = None
+		self._init_viewer()
+
 		self.reset()
 
 	def action_space(self, agent):
@@ -75,6 +75,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
 		return self.observation_spaces[agent]
 
 	def reset(self, seed=None, options=None):
+		self.last_ball_contact_agent = None
+		self.last_contact_rewarded_agent = None
 		self.agents = self.possible_agents[:]
 		self.agent_pos = {}
 		placed_pos = []
@@ -105,7 +107,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
 		self.infos = { agent: {} for agent in self.agents }
 		self.prev_agent_pos = { agent: self.agent_pos[agent].copy() for agent in self.agents }
 		self.prev_ball_pos = self.ball_pos[:]
-		self.prev_goal_scored = getattr(self, "goal_scored", False)
 
 		for agent, action_idx in actions.items():
 			motion = self.action_list[action_idx]["motion"]
@@ -134,17 +135,27 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			min_dist = self.agent_size + self.ball_size
 
 			if dist < min_dist > 1e-5:
+				self.last_ball_contact_agent = agent
 				push_dir = agent_to_ball / dist
 				force = self.ball_push_strength * (min_dist - dist)
 				self.ball_vel += push_dir * force
 
-		self.ball_pos += self.ball_vel
+		goal_y_min = self.goal_zone["top_left"][1]
+		goal_y_max = self.goal_zone["bottom_left"][1]
+		goal_x_start = self.goal_zone["top_left"][0]
+
+		if goal_y_min <= self.ball_pos[1] <= goal_y_max and self.ball_pos[0] <= goal_x_start:
+			self.ball_pos[0] = self.goal_zone["top_left"][0]
+			self.ball_vel = np.zeros(2, dtype=np.float32)
+		else:
+			self.ball_pos += self.ball_vel
+
 		self.ball_vel *= self.ball_friction
 
 		self._clip_pos()
 
-		self._calculate_rewards()
 		self.goal_scored = self._check_goal_scored()
+		self._calculate_rewards()
 
 		self.observations = { agent: self._observe(agent) for agent in self.agents }
 		self.frame_count += 1
@@ -162,7 +173,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			self._init_viewer()
 
 		self._log_frame_info()
-		self.viewer.render(self.agent_pos, self.ball_pos, self.goal_zone["top_left"], self.goal_size)
+		self.viewer.render(self.agent_pos, self.ball_pos)
 
 	def close(self):
 		if self.viewer is not None:
@@ -196,135 +207,18 @@ class AbstractFootballEnv_V1(ParallelEnv):
 		])
 
 	def _calculate_rewards(self):
-		self.proximity_reward = {}
-		self.ball_control_reward = {}
-		self.positioning_reward = {}
-		self.team_coordination_reward = {}
-		self.movement_penalty = {}
-		self.goal_proximity_bonus = {}
+		self.move_towards_ball_reward = {}
 
-		goal_scored_reward = 100.0
-		ball_progress_reward_scale = 10.0
-		ball_proximity_reward_scale = 2.0
-		team_coordination_reward_scale =1.0
-		ball_control_reward_scale = 3.0
-		positioning_reward_scale =1.5
-
-		goal_scored = self._check_goal_scored()
-		prev_goal_scored = self._was_goal_scored_prev_step()
-
-		prev_ball_to_goal_dist = np.linalg.norm(self.goal_center - self.prev_ball_pos)
-		curr_ball_to_goal_dist = np.linalg.norm(self.goal_center - self.ball_pos)
-		ball_progress = prev_ball_to_goal_dist - curr_ball_to_goal_dist
-
-		team_reward = 0.0
-		team_reward += ball_progress_reward_scale * ball_progress
-
-		# Individual agent rewards
 		for agent in self.agents:
-			agent_reward = team_reward  # Start with shared team reward
 
-			curr_pos = self.agent_pos[agent]
-			prev_pos = self.prev_agent_pos[agent]
+			# 1. Reward for moving towards the ball
+			prev_dist_to_ball = np.linalg.norm(self.prev_ball_pos - self.prev_agent_pos[agent])
+			curr_dist_to_ball = np.linalg.norm(self.prev_ball_pos - self.agent_pos[agent])
+			move_towards_ball_reward = (prev_dist_to_ball - curr_dist_to_ball) * 0.1
+			self.move_towards_ball_reward[agent] = move_towards_ball_reward
 
-			# 1. Ball proximity reward (encourages staying near ball)
-			ball_dist = np.linalg.norm(curr_pos - self.ball_pos)
-			prev_ball_dist = np.linalg.norm(prev_pos - self.prev_ball_pos)
-			max_dist = np.sqrt(self.field_width**2 + self.field_height**2)
+			self.rewards[agent] = move_towards_ball_reward
 
-			# Normalized proximity reward (closer = higher reward)
-			proximity_reward = ball_proximity_reward_scale * (1.0 - ball_dist / max_dist)
-			agent_reward += proximity_reward
-			self.proximity_reward[agent] = proximity_reward
-
-			# 2. Ball control reward (for agents who influenced ball movement)
-			ball_movement = np.linalg.norm(self.ball_vel)
-			if self._agent_influenced_ball(agent):  # Check if agent pushed ball this step
-				ball_control_reward = ball_control_reward_scale * ball_movement
-			else:
-				ball_control_reward = 0.0
-			agent_reward += ball_control_reward
-			self.ball_control_reward[agent] = ball_control_reward
-
-			# 3. Positioning reward (encourage good field positioning)
-			# Reward agents for being between ball and goal when ball is far from goal
-			if curr_ball_to_goal_dist > self.field_width * 0.3:  # Ball is far from goal
-				ball_to_goal_vec = self.goal_center - self.ball_pos
-				ball_to_agent_vec = curr_pos - self.ball_pos
-
-				# Check if agent is positioned between ball and goal
-				if np.dot(ball_to_goal_vec, ball_to_agent_vec) > 0:
-					alignment = np.dot(ball_to_goal_vec, ball_to_agent_vec) / (
-						np.linalg.norm(ball_to_goal_vec) * np.linalg.norm(ball_to_agent_vec) + 1e-6
-					)
-					positioning_reward = positioning_reward_scale * max(0, alignment)
-				else:
-					positioning_reward = 0.0
-			else:
-				positioning_reward = 0.0
-
-			agent_reward += positioning_reward
-			self.positioning_reward[agent] = positioning_reward
-
-			# 4. Team coordination reward (reward for maintaining good spacing)
-			teammates = [other for other in self.agents if other != agent]
-			if len(teammates) > 0:
-				avg_teammate_dist = np.mean([
-					np.linalg.norm(curr_pos - self.agent_pos[teammate])
-					for teammate in teammates
-				])
-
-				# Optimal spacing (not too close, not too far)
-				optimal_spacing = self.field_width * 0.2
-				spacing_factor = 1.0 - abs(avg_teammate_dist - optimal_spacing) / optimal_spacing
-				spacing_factor = max(0, spacing_factor)
-				team_coordination_reward = team_coordination_reward_scale * spacing_factor
-			else:
-				team_coordination_reward = 0.0
-
-			agent_reward += team_coordination_reward
-			self.team_coordination_reward[agent] = team_coordination_reward
-
-			# 5. Movement efficiency reward (small penalty for unnecessary movement)
-			movement_dist = np.linalg.norm(curr_pos - prev_pos)
-			if movement_dist < 1e-3:  # Agent didn't move
-				movement_penalty = -0.1  # Small penalty for staying still
-			else:
-				movement_penalty = 0.0
-
-			agent_reward += movement_penalty
-			self.movement_penalty[agent] = movement_penalty
-
-			# 6. Bonus for agents who contributed to goal
-			if goal_scored and not prev_goal_scored:
-				# Give extra reward to agent who last touched the ball
-				if self._agent_influenced_ball(agent):
-					agent_reward += 20.0
-
-				# Give bonus to all agents based on proximity to ball when goal was scored
-				goal_proximity_bonus = 10.0 * (1.0 - ball_dist / max_dist)
-			else:
-				goal_proximity_bonus = 0.0
-
-			agent_reward += goal_proximity_bonus
-			self.goal_proximity_bonus[agent] = goal_proximity_bonus
-
-			self.rewards[agent] = agent_reward
-
-	def _agent_influenced_ball(self, agent):
-		agent_pos = self.agent_pos[agent]
-		prev_agent_pos = self.prev_agent_pos[agent]
-
-		# Check if agent was close enough to ball to influence it
-		dist_to_ball = np.linalg.norm(agent_pos - self.ball_pos)
-		prev_dist_to_ball = np.linalg.norm(prev_agent_pos - self.prev_ball_pos)
-
-		influence_threshold = self.agent_size + self.ball_size + 5  # Slightly larger than collision
-
-		return min(dist_to_ball, prev_dist_to_ball) < influence_threshold
-
-	def _was_goal_scored_prev_step(self):
-		return getattr(self, 'prev_goal_scored', False)
 
 	def _check_agent_agent_collision(self, pos, other_positions, min_dist=None):
 		if min_dist is None:
@@ -372,7 +266,9 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			"field_width": self.field_width,
 			"field_height": self.field_height,
 			"agent_size": self.agent_size,
-			"ball_size": self.ball_size
+			"ball_size": self.ball_size,
+			"goal_zone": self.goal_zone,
+			"goal_size": self.goal_size
 		})
 
 	def _log_frame_info(self):
@@ -386,13 +282,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
 			print(f"\taction           : {self.action_list[action]["name"]}")
 			print()
 			print(f"\trewards          :")
-			print(f"\t\tproximity reward        : {self.proximity_reward[agent]}")
-			print(f"\t\tball control reward     : {self.ball_control_reward[agent]}")
-			print(f"\t\tpositioning reward      : {self.positioning_reward[agent]}")
-			print(f"\t\tteam coordination reward: {self.team_coordination_reward[agent]}")
-			print(f"\t\tmovement penalty        : {self.movement_penalty[agent]}")
-			print(f"\t\tgoal proximity bonus    : {self.goal_proximity_bonus[agent]}")
-			print(f"\t\ttotal                   : {self.rewards[agent]}")
+			print(f"\t\tmove towards ball: {self.move_towards_ball_reward[agent]}")
+			print(f"\t\ttotal            : {self.rewards[agent]}")
 			print()
 			print(f"\tobservations     : {self.observations[agent].round(2)}")
 			print(f"\tlength of obs    : {len(self.observations[agent])}")

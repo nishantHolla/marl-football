@@ -36,7 +36,7 @@ class MADQNEvaluator_V1:
 		print(f"Models loaded from {self.model_prefix}_*.pth")
 
 
-	def evaluate(self, num_episodes=10, render=True):
+	def evaluate(self, num_episodes=10, episode_length=1000, render=True):
 		"""Evaluate trained agents"""
 		print(f"Evaluating for {num_episodes} episodes...")
 
@@ -47,7 +47,7 @@ class MADQNEvaluator_V1:
 			observations, infos = self.env.reset()
 			episode_reward = {agent: 0 for agent in self.agents}
 
-			while self.agents:
+			for frame_number in range(episode_length):
 				actions = {}
 				for agent in self.agents:
 					if agent in observations:

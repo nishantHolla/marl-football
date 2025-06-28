@@ -2,88 +2,90 @@ import pygame
 
 
 class Viewer:
-	def __init__(self, options):
-		pygame.init()
+    def __init__(self, options):
+        pygame.init()
 
-		self.field_width = options["field_width"]
-		self.field_height = options["field_height"]
-		self.agent_size = options["agent_size"]
-		self.ball_size = options["ball_size"]
-		self.goal_zone = options["goal_zone"]
-		self.goal_size = options["goal_size"]
-		self.goal_box_thickness = 10
+        self.field_width = options["field_width"]
+        self.field_height = options["field_height"]
+        self.agent_size = options["agent_size"]
+        self.ball_size = options["ball_size"]
+        self.goal_zone = options["goal_zone"]
+        self.goal_size = options["goal_size"]
+        self.goal_box_thickness = 10
 
-		self.goal_top_rect = pygame.Rect(
-			self.goal_zone["top_left"][0] - self.goal_box_thickness,
-			self.goal_zone["top_left"][1] - self.goal_box_thickness,
-			self.goal_size[0] + self.goal_box_thickness,
-			self.goal_box_thickness
-		)
+        self.goal_top_rect = pygame.Rect(
+            self.goal_zone["top_left"][0] - self.goal_box_thickness,
+            self.goal_zone["top_left"][1] - self.goal_box_thickness,
+            self.goal_size[0] + self.goal_box_thickness,
+            self.goal_box_thickness,
+        )
 
-		self.goal_bottom_rect = pygame.Rect(
-			self.goal_zone["bottom_left"][0] - self.goal_box_thickness,
-			self.goal_zone["bottom_left"][1],
-			self.goal_size[0] + self.goal_box_thickness,
-			self.goal_box_thickness
-		)
+        self.goal_bottom_rect = pygame.Rect(
+            self.goal_zone["bottom_left"][0] - self.goal_box_thickness,
+            self.goal_zone["bottom_left"][1],
+            self.goal_size[0] + self.goal_box_thickness,
+            self.goal_box_thickness,
+        )
 
-		self.goal_middle_rect = pygame.Rect(
-			self.goal_zone["top_left"][0] - self.goal_box_thickness,
-			self.goal_zone["top_left"][1],
-			self.goal_box_thickness,
-			self.goal_size[1]
-		)
+        self.goal_middle_rect = pygame.Rect(
+            self.goal_zone["top_left"][0] - self.goal_box_thickness,
+            self.goal_zone["top_left"][1],
+            self.goal_box_thickness,
+            self.goal_size[1],
+        )
 
-		self.goal_inner_rect = pygame.Rect(
-			self.goal_zone["top_left"][0],
-			self.goal_zone["top_left"][1],
-			self.goal_size[0],
-			self.goal_size[1]
-		)
+        self.goal_inner_rect = pygame.Rect(
+            self.goal_zone["top_left"][0],
+            self.goal_zone["top_left"][1],
+            self.goal_size[0],
+            self.goal_size[1],
+        )
 
-		self.screen = pygame.display.set_mode((self.field_width, self.field_height))
-		self.clock = pygame.time.Clock()
+        self.screen = pygame.display.set_mode((self.field_width, self.field_height))
+        self.clock = pygame.time.Clock()
 
-		self._load_resources()
+        self._load_resources()
 
-	def close(self):
-		pygame.quit()
+    def close(self):
+        pygame.quit()
 
+    def render(self, agent_positions, ball_position):
+        # Draw the ground image
+        self.screen.blit(self.football_pitch_image, (0, 0))
 
-	def render(self, agent_positions, ball_position):
-		# Draw the ground image
-		self.screen.blit(self.football_pitch_image, (0, 0))
+        # Draw goal
+        goal_width = 5
+        pygame.draw.rect(self.screen, "white", self.goal_bottom_rect)
+        pygame.draw.rect(self.screen, "white", self.goal_top_rect)
+        pygame.draw.rect(self.screen, "white", self.goal_middle_rect)
+        pygame.draw.rect(self.screen, "#aaaaaa", self.goal_inner_rect)
 
-		# Draw goal
-		goal_width = 5
-		pygame.draw.rect(self.screen, "white", self.goal_bottom_rect)
-		pygame.draw.rect(self.screen, "white", self.goal_top_rect)
-		pygame.draw.rect(self.screen, "white", self.goal_middle_rect)
-		pygame.draw.rect(self.screen, "#aaaaaa", self.goal_inner_rect)
+        # Draw agents
+        for _, position in agent_positions.items():
+            self.screen.blit(
+                self.agent_image, position - (self.agent_image.get_width() / 2)
+            )
 
-		# Draw agents
-		for _, position in agent_positions.items():
-			self.screen.blit(self.agent_image, position - (self.agent_image.get_width()/2))
+        # Draw football
+        self.screen.blit(
+            self.football_image, ball_position - (self.football_image.get_width() / 2)
+        )
 
-		# Draw football
-		self.screen.blit(self.football_image, ball_position - (self.football_image.get_width()/2))
+        # Update display
+        pygame.display.flip()
 
-		# Update display
-		pygame.display.flip()
+    def _load_resources(self):
+        football_pitch_image = pygame.image.load("resources/football_pitch.png")
+        self.football_pitch_image = pygame.transform.scale(
+            football_pitch_image, (self.field_width, self.field_height)
+        )
 
+        football_image = pygame.image.load("resources/football.png")
+        self.football_image = pygame.transform.scale(
+            football_image, (2 * self.ball_size, 2 * self.ball_size)
+        )
 
-	def _load_resources(self):
-		football_pitch_image = pygame.image.load("resources/football_pitch.png")
-		self.football_pitch_image = pygame.transform.scale(
-			football_pitch_image, (self.field_width, self.field_height)
-		)
-
-		football_image = pygame.image.load("resources/football.png")
-		self.football_image = pygame.transform.scale(
-				football_image, (2 * self.ball_size, 2 * self.ball_size)
-		)
-
-		agent_image = pygame.image.load("resources/player.png")
-		self.agent_image = pygame.transform.scale(
-				agent_image, (2 * self.agent_size, 2 * self.agent_size)
-		)
+        agent_image = pygame.image.load("resources/player.png")
+        self.agent_image = pygame.transform.scale(
+            agent_image, (2 * self.agent_size, 2 * self.agent_size)
+        )

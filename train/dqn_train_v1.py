@@ -4,184 +4,225 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
+
 class MADQNTrainer_V1:
-	"""Multi-Agent DQN Trainer"""
-	def __init__(self, env, model_prefix, lr=0.001, gamma=0.95, epsilon=1.0,
-			  epsilon_min=0.01, epsilon_decay=0.995,
-			  memory_size=10000, batch_size=32, target_update=100):
-		self.env = env
-		self.model_prefix = model_prefix
-		self.target_update = target_update
+    """Multi-Agent DQN Trainer"""
 
-		# Get environment info
-		self.agents = env.possible_agents
-		self.num_agents = len(self.agents)
+    def __init__(
+        self,
+        env,
+        model_prefix,
+        lr=0.001,
+        gamma=0.95,
+        epsilon=1.0,
+        epsilon_min=0.01,
+        epsilon_decay=0.995,
+        memory_size=10000,
+        batch_size=32,
+        target_update=100,
+    ):
+        self.env = env
+        self.model_prefix = model_prefix
+        self.target_update = target_update
 
-		# Create agents
-		self.dqn_agents = {}
-		for agent in self.agents:
-			state_size = env.observation_space(agent).shape[0]
-			action_size = env.action_space(agent).n
-			self.dqn_agents[agent] = DQNAgent_V1(
-					state_size, action_size, lr, gamma, epsilon,
-					epsilon_min, epsilon_decay, memory_size, batch_size
-					)
+        # Get environment info
+        self.agents = env.possible_agents
+        self.num_agents = len(self.agents)
 
-		# Training metrics
-		self.episode_rewards = []
-		self.episode_lengths = []
-		self.goal_count = 0
+        # Create agents
+        self.dqn_agents = {}
+        for agent in self.agents:
+            state_size = env.observation_space(agent).shape[0]
+            action_size = env.action_space(agent).n
+            self.dqn_agents[agent] = DQNAgent_V1(
+                state_size,
+                action_size,
+                lr,
+                gamma,
+                epsilon,
+                epsilon_min,
+                epsilon_decay,
+                memory_size,
+                batch_size,
+            )
 
-	def train(self, num_episodes=1000, max_steps=200, render_every=100, save_every=100):
-		"""Train the multi-agent system"""
-		print(f"Starting training for {num_episodes} episodes...")
-		print(f"Device: {self.dqn_agents[self.agents[0]].device}")
-		print(f"Initial epsilon: {self.dqn_agents[self.agents[0]].epsilon:.3f}")
+        # Training metrics
+        self.episode_rewards = []
+        self.episode_lengths = []
+        self.goal_count = 0
 
-		for episode in range(num_episodes):
-			observations, infos = self.env.reset()
-			episode_reward = {agent: 0 for agent in self.agents}
-			episode_length = 0
+    def train(self, num_episodes=1000, max_steps=200, render_every=100, save_every=100):
+        """Train the multi-agent system"""
+        print(f"Starting training for {num_episodes} episodes...")
+        print(f"Device: {self.dqn_agents[self.agents[0]].device}")
+        print(f"Initial epsilon: {self.dqn_agents[self.agents[0]].epsilon:.3f}")
 
-			for step in range(max_steps):
-				# Get actions from all agents
-				actions = {}
-				for agent in self.agents:
-					if agent in observations:
-						actions[agent] = self.dqn_agents[agent].act(observations[agent])
+        for episode in range(num_episodes):
+            observations, infos = self.env.reset()
+            episode_reward = {agent: 0 for agent in self.agents}
+            episode_length = 0
 
-				# Step environment
-				next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+            for step in range(max_steps):
+                # Get actions from all agents
+                actions = {}
+                for agent in self.agents:
+                    if agent in observations:
+                        actions[agent] = self.dqn_agents[agent].act(observations[agent])
 
-				# Store experiences and update episode rewards
-				for agent in self.agents:
-					if agent in observations and agent in next_observations:
-						self.dqn_agents[agent].remember(
-								observations[agent],
-								actions[agent],
-								rewards[agent],
-								next_observations[agent],
-								terminations[agent] or truncations[agent]
-								)
-						episode_reward[agent] += rewards[agent]
+                # Step environment
+                next_observations, rewards, terminations, truncations, infos = (
+                    self.env.step(actions)
+                )
 
-				# Train agents
-				for agent in self.agents:
-					if len(self.dqn_agents[agent].memory) >= self.dqn_agents[agent].batch_size:
-						self.dqn_agents[agent].replay_without_epsilon_decay()
+                # Store experiences and update episode rewards
+                for agent in self.agents:
+                    if agent in observations and agent in next_observations:
+                        self.dqn_agents[agent].remember(
+                            observations[agent],
+                            actions[agent],
+                            rewards[agent],
+                            next_observations[agent],
+                            terminations[agent] or truncations[agent],
+                        )
+                        episode_reward[agent] += rewards[agent]
 
-				# Update target networks periodically
-				if episode % self.target_update == 0:
-					for agent in self.agents:
-						self.dqn_agents[agent].update_target_network()
+                # Train agents
+                for agent in self.agents:
+                    if (
+                        len(self.dqn_agents[agent].memory)
+                        >= self.dqn_agents[agent].batch_size
+                    ):
+                        self.dqn_agents[agent].replay_without_epsilon_decay()
 
-				# Render if needed
-				if episode % render_every == 0 and episode > 0:
-					self.env.render(actions)
+                # Update target networks periodically
+                if episode % self.target_update == 0:
+                    for agent in self.agents:
+                        self.dqn_agents[agent].update_target_network()
 
-				observations = next_observations
-				episode_length += 1
+                # Render if needed
+                if episode % render_every == 0 and episode > 0:
+                    self.env.render(actions)
 
-				# Check if episode is done
-				if any(terminations.values()) or any(truncations.values()):
-					if any(terminations.values()):
-						self.goal_count += 1
-					break
+                observations = next_observations
+                episode_length += 1
 
-			# Decay epsilon once per episode for all agents
-			for agent in self.agents:
-				if self.dqn_agents[agent].epsilon > self.dqn_agents[agent].epsilon_min:
-					self.dqn_agents[agent].epsilon *= self.dqn_agents[agent].epsilon_decay
+                # Check if episode is done
+                if any(terminations.values()) or any(truncations.values()):
+                    if any(terminations.values()):
+                        self.goal_count += 1
+                    break
 
-			# Store episode metrics
-			total_reward = sum(episode_reward.values())
-			self.episode_rewards.append(total_reward)
-			self.episode_lengths.append(episode_length)
+            # Decay epsilon once per episode for all agents
+            for agent in self.agents:
+                if self.dqn_agents[agent].epsilon > self.dqn_agents[agent].epsilon_min:
+                    self.dqn_agents[agent].epsilon *= self.dqn_agents[
+                        agent
+                    ].epsilon_decay
 
-			# Print progress
-			if episode % 50 == 0:
-				avg_reward = np.mean(self.episode_rewards[-50:]) if self.episode_rewards else 0
-				avg_length = np.mean(self.episode_lengths[-50:]) if self.episode_lengths else 0
-				epsilon = self.dqn_agents[self.agents[0]].epsilon
+            # Store episode metrics
+            total_reward = sum(episode_reward.values())
+            self.episode_rewards.append(total_reward)
+            self.episode_lengths.append(episode_length)
 
-				print(f"Episode {episode:4d} | "
-		  f"Avg Reward: {avg_reward:6.2f} | "
-		  f"Avg Length: {avg_length:6.2f} | "
-		  f"Goals: {self.goal_count:3d} | "
-		  f"Epsilon: {epsilon:.4f}")
+            # Print progress
+            if episode % 50 == 0:
+                avg_reward = (
+                    np.mean(self.episode_rewards[-50:]) if self.episode_rewards else 0
+                )
+                avg_length = (
+                    np.mean(self.episode_lengths[-50:]) if self.episode_lengths else 0
+                )
+                epsilon = self.dqn_agents[self.agents[0]].epsilon
 
-			# Save models periodically
-			if episode % save_every == 0 and episode > 0:
-				self.save_models(f"checkpoint_{episode}_{self.model_prefix}")
+                print(
+                    f"Episode {episode:4d} | "
+                    f"Avg Reward: {avg_reward:6.2f} | "
+                    f"Avg Length: {avg_length:6.2f} | "
+                    f"Goals: {self.goal_count:3d} | "
+                    f"Epsilon: {epsilon:.4f}"
+                )
 
-		print(f"Training completed! Total goals scored: {self.goal_count}")
+            # Save models periodically
+            if episode % save_every == 0 and episode > 0:
+                self.save_models(f"checkpoint_{episode}_{self.model_prefix}")
 
-	def save_models(self, name):
-		"""Save trained models"""
-		for agent in self.agents:
-			torch.save(
-					self.dqn_agents[agent].q_network.state_dict(),
-					f"{name}_{agent}.pth"
-					)
-		print(f"Models saved as {name}_*.pth")
+        print(f"Training completed! Total goals scored: {self.goal_count}")
 
-	def plot_training_progress(self):
-		"""Plot training metrics"""
-		if not self.episode_rewards:
-			print("No training data to plot")
-			return
+    def save_models(self, name):
+        """Save trained models"""
+        for agent in self.agents:
+            torch.save(
+                self.dqn_agents[agent].q_network.state_dict(), f"{name}_{agent}.pth"
+            )
+        print(f"Models saved as {name}_*.pth")
 
-		fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    def plot_training_progress(self):
+        """Plot training metrics"""
+        if not self.episode_rewards:
+            print("No training data to plot")
+            return
 
-		# Plot rewards
-		ax1.plot(self.episode_rewards, alpha=0.3, color='blue')
-		# Moving average
-		window = 50
-		if len(self.episode_rewards) >= window:
-			moving_avg = [np.mean(self.episode_rewards[i:i+window])
-				 for i in range(len(self.episode_rewards)-window+1)]
-			ax1.plot(range(window-1, len(self.episode_rewards)), moving_avg, color='red')
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-		ax1.set_xlabel('Episode')
-		ax1.set_ylabel('Total Reward')
-		ax1.set_title('Training Rewards')
-		ax1.grid(True)
+        # Plot rewards
+        ax1.plot(self.episode_rewards, alpha=0.3, color="blue")
+        # Moving average
+        window = 50
+        if len(self.episode_rewards) >= window:
+            moving_avg = [
+                np.mean(self.episode_rewards[i : i + window])
+                for i in range(len(self.episode_rewards) - window + 1)
+            ]
+            ax1.plot(
+                range(window - 1, len(self.episode_rewards)), moving_avg, color="red"
+            )
 
-		# Plot episode lengths
-		ax2.plot(self.episode_lengths, alpha=0.3, color='green')
-		if len(self.episode_lengths) >= window:
-			moving_avg = [np.mean(self.episode_lengths[i:i+window])
-				 for i in range(len(self.episode_lengths)-window+1)]
-			ax2.plot(range(window-1, len(self.episode_lengths)), moving_avg, color='red')
+        ax1.set_xlabel("Episode")
+        ax1.set_ylabel("Total Reward")
+        ax1.set_title("Training Rewards")
+        ax1.grid(True)
 
-		ax2.set_xlabel('Episode')
-		ax2.set_ylabel('Episode Length')
-		ax2.set_title('Episode Lengths')
-		ax2.grid(True)
+        # Plot episode lengths
+        ax2.plot(self.episode_lengths, alpha=0.3, color="green")
+        if len(self.episode_lengths) >= window:
+            moving_avg = [
+                np.mean(self.episode_lengths[i : i + window])
+                for i in range(len(self.episode_lengths) - window + 1)
+            ]
+            ax2.plot(
+                range(window - 1, len(self.episode_lengths)), moving_avg, color="red"
+            )
 
-		plt.tight_layout()
-		plt.show()
+        ax2.set_xlabel("Episode")
+        ax2.set_ylabel("Episode Length")
+        ax2.set_title("Episode Lengths")
+        ax2.grid(True)
+
+        plt.tight_layout()
+        plt.show()
 
 
 def train(model_prefix, num_episodes):
-	env = AbstractFootballEnv_V1(n_agents=2, render_mode="none")
+    env = AbstractFootballEnv_V1(n_agents=2, render_mode="none")
 
-	trainer = MADQNTrainer_V1(
-			env=env,
-			model_prefix=model_prefix,
-			lr=0.0005,
-			gamma=0.99,
-			epsilon=1.0,
-			epsilon_min=0.01,
-			epsilon_decay=0.9995,
-			memory_size=50000,
-			batch_size=64,
-			target_update=50
-			)
+    trainer = MADQNTrainer_V1(
+        env=env,
+        model_prefix=model_prefix,
+        lr=0.0005,
+        gamma=0.99,
+        epsilon=1.0,
+        epsilon_min=0.01,
+        epsilon_decay=0.9995,
+        memory_size=50000,
+        batch_size=64,
+        target_update=50,
+    )
 
-	trainer.train(num_episodes=num_episodes, max_steps=200, render_every=500, save_every=500)
+    trainer.train(
+        num_episodes=num_episodes, max_steps=200, render_every=500, save_every=500
+    )
 
-	trainer.plot_training_progress()
-	trainer.save_models(f"{model_prefix}_{num_episodes}")
+    trainer.plot_training_progress()
+    trainer.save_models(f"{model_prefix}_{num_episodes}")
 
-	env.close()
+    env.close()

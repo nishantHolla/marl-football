@@ -2,6 +2,7 @@ from models.dqn_v1 import DQNAgent_V1
 from envs.abstract_football_env_v1 import AbstractFootballEnv_V1
 import numpy as np
 import torch
+from pathlib import Path
 
 
 class MADQNEvaluator_V1:
@@ -10,7 +11,6 @@ class MADQNEvaluator_V1:
     def __init__(
         self,
         env,
-        model_prefix,
         lr=0.001,
         gamma=0.95,
         epsilon=1.0,
@@ -21,7 +21,6 @@ class MADQNEvaluator_V1:
         target_update=100,
     ):
         self.env = env
-        self.model_prefix = model_prefix
         self.target_update = target_update
 
         # Get environment info
@@ -45,14 +44,14 @@ class MADQNEvaluator_V1:
                 batch_size,
             )
 
-    def load_models(self):
+    def load_models(self, prefix):
         """Load trained models"""
         for agent in self.agents:
             self.dqn_agents[agent].q_network.load_state_dict(
-                torch.load(f"{self.model_prefix}_{agent}.pth")
+                torch.load(f"{prefix}_{agent}.pth")
             )
 
-        print(f"Models loaded from {self.model_prefix}_*.pth")
+        print(f"Models loaded from {prefix}_*.pth")
 
     def evaluate(self, num_episodes=10, episode_length=1000, render=True):
         """Evaluate trained agents"""
@@ -105,11 +104,11 @@ class MADQNEvaluator_V1:
 
 
 def evaluate(model_prefix, num_episodes):
+    Path(f"saves/{model_prefix}").mkdir(parents=True, exist_ok=True)
     env = AbstractFootballEnv_V1(n_agents=2, render_mode="human")
 
     evaluator = MADQNEvaluator_V1(
         env=env,
-        model_prefix=model_prefix,
         lr=0.0005,
         gamma=0.99,
         epsilon=1.0,
@@ -120,5 +119,7 @@ def evaluate(model_prefix, num_episodes):
         target_update=50,
     )
 
-    evaluator.load_models()
+    evaluator.load_models(f"saves/{model_prefix}/{model_prefix}")
     evaluator.evaluate(num_episodes=num_episodes)
+
+    env.close()

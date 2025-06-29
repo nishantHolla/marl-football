@@ -26,4 +26,4 @@ elif sys.argv[1] == "train":
     train("test", 1000)
 
 elif sys.argv[1] == "eval":
-    evaluate("saves/test_1000/test_1000", 10)
+    evaluate("test_1000", 10)

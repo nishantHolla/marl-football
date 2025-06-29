@@ -3,6 +3,7 @@ from envs.abstract_football_env_v1 import AbstractFootballEnv_V1
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from pathlib import Path
 
 
 class MADQNTrainer_V1:
@@ -148,13 +149,13 @@ class MADQNTrainer_V1:
 
         print(f"Training completed! Total goals scored: {self.goal_count}")
 
-    def save_models(self, name):
+    def save_models(self, prefix):
         """Save trained models"""
         for agent in self.agents:
             torch.save(
-                self.dqn_agents[agent].q_network.state_dict(), f"{name}_{agent}.pth"
+                self.dqn_agents[agent].q_network.state_dict(), f"{prefix}_{agent}.pth"
             )
-        print(f"Models saved as {name}_*.pth")
+        print(f"Models saved as {prefix}_*.pth")
 
     def plot_training_progress(self):
         """Plot training metrics"""
@@ -203,6 +204,7 @@ class MADQNTrainer_V1:
 
 
 def train(model_prefix, num_episodes):
+    Path(f"saves/{model_prefix}").mkdir(parents=True, exist_ok=True)
     env = AbstractFootballEnv_V1(n_agents=2, render_mode="none")
 
     trainer = MADQNTrainer_V1(
@@ -219,10 +221,10 @@ def train(model_prefix, num_episodes):
     )
 
     trainer.train(
-        num_episodes=num_episodes, max_steps=200, render_every=500, save_every=500
+        num_episodes=num_episodes, max_steps=1000, render_every=500, save_every=500
     )
 
     trainer.plot_training_progress()
-    trainer.save_models(f"{model_prefix}_{num_episodes}")
+    trainer.save_models(f"saves/{model_prefix}/{model_prefix}_{num_episodes}")
 
     env.close()

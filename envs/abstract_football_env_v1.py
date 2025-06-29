@@ -319,7 +319,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             print(f"\tcurrent position : {self.agent_pos[agent].round(2)}")
             print(f"\taction           : {self.action_list[action]['name']}")
             print()
-            print(f"\trewards          :")
+            print("\trewards          :")
             print(f"\t\tmove towards ball: {self.move_towards_ball_reward[agent]}")
             print(f"\t\ttotal            : {self.rewards[agent]}")
             print()

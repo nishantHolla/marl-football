@@ -2,7 +2,6 @@ from pettingzoo import ParallelEnv
 from gymnasium.spaces import Box, Discrete
 from render.viewer import Viewer
 import numpy as np
-import itertools
 
 
 class AbstractFootballEnv_V1(ParallelEnv):
@@ -17,9 +16,9 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.agent_size = 20
         self.agent_speed = 3
         self.ball_size = 15
-        self.repulsion_strength = 1.5
         self.ball_push_strength = 1.0
         self.ball_friction = 0.95
+        self.kick_range = self.agent_size + self.ball_size + 3
 
         self.possible_agents = [f"agent_{i}" for i in range(self.n_agents)]
         self.agents = self.possible_agents[:]
@@ -52,6 +51,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             {"name": "MOVE_WEST", "motion": np.array([-1, 0], dtype=np.float32)},
             {"name": "MOVE_NORTH_WEST", "motion": np.array([-1, -1], dtype=np.float32)},
             {"name": "STAY", "motion": np.array([0, 0], dtype=np.float32)},
+            {"name": "KICK", "motion": np.array([0, 0], dtype=np.float32)},
         ]
 
         self.action_spaces = {
@@ -117,37 +117,38 @@ class AbstractFootballEnv_V1(ParallelEnv):
         }
         self.prev_ball_pos = self.ball_pos[:]
 
-        for agent, action_idx in actions.items():
-            motion = self.action_list[action_idx]["motion"]
-            norm = np.linalg.norm(motion)
-            if norm > 0:
-                motion = (motion / norm) * self.agent_speed
-            else:
-                motion = np.zeros(2, dtype=np.float32)
-
-            self.agent_pos[agent] += motion
-
-        for a1, a2 in itertools.combinations(self.agents, 2):
-            pos1, pos2 = self.agent_pos[a1], self.agent_pos[a2]
-            diff = pos1 - pos2
-            dist = np.linalg.norm(diff)
-            min_dist = 2 * self.agent_size
-
-            if dist < min_dist and dist > 1e-5:
-                repulse = self.repulsion_strength * (min_dist - dist) * (diff / dist)
-                self.agent_pos[a1] += repulse / 2
-                self.agent_pos[a2] -= repulse / 2
-
         for agent in self.agents:
-            agent_to_ball = self.ball_pos - self.agent_pos[agent]
-            dist = np.linalg.norm(agent_to_ball)
-            min_dist = self.agent_size + self.ball_size
+            if agent not in actions:
+                continue
 
-            if dist < min_dist > 1e-5:
-                self.last_ball_contact_agent = agent
-                push_dir = agent_to_ball / dist
-                force = self.ball_push_strength * (min_dist - dist)
-                self.ball_vel += push_dir * force
+            action_idx = actions[agent]
+            motion = self.action_list[action_idx]["motion"]
+
+            # Calculate the intended new position
+            intended_pos = self.agent_pos[agent] + motion * self.agent_speed
+
+            # Get positions of other agents (excluding current agent)
+            other_agent_positions = [
+                self.agent_pos[other] for other in self.agents if other != agent
+            ]
+
+            # Check if intended position would cause collisions
+            agent_collision = self._check_agent_agent_collision(
+                intended_pos, other_agent_positions
+            )
+            ball_collision = self._check_agent_ball_collision(intended_pos)
+
+            if not agent_collision and not ball_collision:
+                # No collision - move to intended position
+                self.agent_pos[agent] = intended_pos
+            else:
+                # Collision detected - try to move as much as possible
+                self.agent_pos[agent] = self._resolve_collision_movement(
+                    agent, motion * self.agent_speed, other_agent_positions
+                )
+
+            if self.action_list[action_idx]["name"] == "KICK":
+                self._handle_kick_action(agent)
 
         goal_y_min = self.goal_zone["top_left"][1]
         goal_y_max = self.goal_zone["bottom_left"][1]
@@ -163,7 +164,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self.ball_pos += self.ball_vel
 
         self.ball_vel *= self.ball_friction
-
         self._clip_pos()
 
         self.goal_scored = self._check_goal_scored()
@@ -179,6 +179,62 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self.truncations,
             self.infos,
         )
+
+    def _resolve_collision_movement(
+        self, agent, intended_movement, other_agent_positions
+    ):
+        """
+        Try to move the agent as much as possible in the intended direction
+        without causing collisions with other agents or the ball.
+        """
+        current_pos = self.agent_pos[agent]
+
+        # Try to move step by step (10 steps) to see how far we can go
+        max_steps = 10
+        best_pos = current_pos.copy()
+
+        for step in range(1, max_steps + 1):
+            # Calculate partial movement
+            partial_movement = intended_movement * (step / max_steps)
+            test_pos = current_pos + partial_movement
+
+            # Check for collisions at this test position
+            agent_collision = self._check_agent_agent_collision(
+                test_pos, other_agent_positions
+            )
+            ball_collision = self._check_agent_ball_collision(test_pos)
+
+            if not agent_collision and not ball_collision:
+                # This position is valid, update best position
+                best_pos = test_pos.copy()
+            else:
+                # Collision detected, stop here and return the last valid position
+                break
+
+        return best_pos
+
+    def _handle_kick_action(self, agent):
+        """
+        Handle the KICK action by pushing the ball if the agent is close enough.
+        The ball is pushed in the direction from the agent to the ball.
+        """
+        agent_pos = self.agent_pos[agent]
+
+        # Check if agent is close enough to kick the ball
+        distance_to_ball = np.linalg.norm(agent_pos - self.ball_pos)
+        kick_range = self.agent_size + self.ball_size + 3
+
+        if distance_to_ball <= self.kick_range:
+            # Calculate direction from agent to ball
+            direction = self.ball_pos - agent_pos
+
+            # Normalize the direction (avoid division by zero)
+            if np.linalg.norm(direction) > 0:
+                direction = direction / np.linalg.norm(direction)
+
+                # Apply kick force to ball velocity in the direction from agent to ball
+                kick_force = direction * self.ball_push_strength
+                self.ball_vel += kick_force
 
     def render(self, actions=None):
         if actions is None:

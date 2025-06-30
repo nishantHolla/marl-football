@@ -53,7 +53,7 @@ class MADQNEvaluator_V1:
 
         print(f"Models loaded from {prefix}_*.pth")
 
-    def evaluate(self, num_episodes=10, episode_length=1000, render=True):
+    def evaluate(self, num_episodes=10, episode_length=200, render=True):
         """Evaluate trained agents"""
         print(f"Evaluating for {num_episodes} episodes...")
 

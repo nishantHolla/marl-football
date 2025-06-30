@@ -32,7 +32,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Ball params
         self.ball_size = 15
-        self.ball_push_strength = 1.0
+        self.ball_push_strength = 3.0
         self.ball_friction = 0.95
 
         self.kick_range = self.agent_size + self.ball_size + 3
@@ -235,7 +235,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self.ball_pos[0] = self.goal_zone["top_left"][0]
             self.ball_vel = np.zeros(2, dtype=np.float32)
         else:
-            self.ball_pos += self.ball_vel
+            self._move_ball_with_collision_detection()
 
         self.ball_vel *= self.ball_friction
 
@@ -257,6 +257,73 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self.truncations,
             self.infos,
         )
+
+    def _move_ball_with_collision_detection(self):
+        """
+        Move the ball while checking for collisions with agents.
+        If a collision is detected, stop the ball at the collision point.
+        """
+        if np.linalg.norm(self.ball_vel) == 0:
+            return  # Ball is not moving
+
+        # Calculate intended new ball position
+        intended_ball_pos = self.ball_pos + self.ball_vel
+
+        # Get all current agent positions
+        all_agent_positions = list(self.agent_pos.values())
+
+        # Check if the intended position would cause collision with any agent
+        collision_detected = False
+        for agent_pos in all_agent_positions:
+            distance = np.linalg.norm(intended_ball_pos - agent_pos)
+            collision_distance = self.ball_size + self.agent_size
+
+            if distance < collision_distance:
+                collision_detected = True
+                break
+
+        if not collision_detected:
+            # No collision - move ball to intended position
+            self.ball_pos = intended_ball_pos
+        else:
+            # Collision detected - find the furthest safe position along the trajectory
+            safe_ball_pos = self._find_safe_ball_position(all_agent_positions)
+            self.ball_pos = safe_ball_pos
+            # Stop the ball when it collides
+            self.ball_vel = np.zeros(2, dtype=np.float32)
+
+    def _find_safe_ball_position(self, agent_positions):
+        """
+        Find the furthest position the ball can move along its trajectory
+        without colliding with any agent.
+        """
+        # Try moving the ball in small steps along its velocity vector
+        max_steps = 20
+        current_pos = self.ball_pos.copy()
+        step_vel = self.ball_vel / max_steps
+        safe_pos = current_pos.copy()
+
+        for step in range(1, max_steps + 1):
+            test_pos = current_pos + step_vel * step
+
+            # Check collision with all agents at this test position
+            collision_detected = False
+            for agent_pos in agent_positions:
+                distance = np.linalg.norm(test_pos - agent_pos)
+                collision_distance = self.ball_size + self.agent_size
+
+                if distance < collision_distance:
+                    collision_detected = True
+                    break
+
+            if not collision_detected:
+                # This position is safe
+                safe_pos = test_pos.copy()
+            else:
+                # Collision detected, stop here
+                break
+
+        return safe_pos
 
     def _resolve_collision_movement(
         self, agent, intended_movement, other_agent_positions

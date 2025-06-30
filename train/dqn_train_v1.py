@@ -7,7 +7,10 @@ from pathlib import Path
 
 
 class MADQNTrainer_V1:
-    """Multi-Agent DQN Trainer"""
+    """
+    Multi-Agent DQN Trainer
+
+    """
 
     def __init__(
         self,
@@ -22,15 +25,31 @@ class MADQNTrainer_V1:
         batch_size=32,
         target_update=100,
     ):
+        """
+        Initialize the trainer with the given parameters
+
+        Params:
+            (env)   env          : Environment to evaluate
+            (str)   model_prefix : Path to save checkpoints
+            (float) lr           : Learning rate
+            (float) gamma        : Discount factor
+            (float) epsilon      : Randomization for learning
+            (float) epsilon_min  : Minimum possible epsilon value
+            (float) epsilon_decay: Decay factor for epsilon
+            (int)   memory_size  : Size of the memory
+            (int)   batch_size   : Number of sessions in one batch
+            (int)   target_update: Update after every n episodes
+        """
+        ## Initialize the env
         self.env = env
         self.model_prefix = model_prefix
         self.target_update = target_update
 
-        # Get environment info
+        ## Get environment info
         self.agents = env.possible_agents
         self.num_agents = len(self.agents)
 
-        # Create agents
+        ## Create agents
         self.dqn_agents = {}
         for agent in self.agents:
             state_size = env.observation_space(agent).shape[0]
@@ -47,13 +66,21 @@ class MADQNTrainer_V1:
                 batch_size,
             )
 
-        # Training metrics
+        ## Training metrics
         self.episode_rewards = []
         self.episode_lengths = []
         self.goal_count = 0
 
     def train(self, num_episodes=1000, max_steps=200, render_every=100, save_every=100):
-        """Train the multi-agent system"""
+        """
+        Train the multi-agent system
+
+        Params:
+            (int) num_episodes: Number of episodes to train for
+            (int) max_steps   : Number of steps to perform in each episode
+            (int) render_every: Render every n episodes
+            (int) save_every  : Save as checkpoint after every n episodes
+        """
         print(f"Starting training for {num_episodes} episodes...")
         print(f"Device: {self.dqn_agents[self.agents[0]].device}")
         print(f"Initial epsilon: {self.dqn_agents[self.agents[0]].epsilon:.3f}")
@@ -64,18 +91,18 @@ class MADQNTrainer_V1:
             episode_length = 0
 
             for step in range(max_steps):
-                # Get actions from all agents
+                ## Get actions from all agents
                 actions = {}
                 for agent in self.agents:
                     if agent in observations:
                         actions[agent] = self.dqn_agents[agent].act(observations[agent])
 
-                # Step environment
+                ## Step environment
                 next_observations, rewards, terminations, truncations, infos = (
                     self.env.step(actions)
                 )
 
-                # Store experiences and update episode rewards
+                ## Store experiences and update episode rewards
                 for agent in self.agents:
                     if agent in observations and agent in next_observations:
                         self.dqn_agents[agent].remember(
@@ -87,7 +114,7 @@ class MADQNTrainer_V1:
                         )
                         episode_reward[agent] += rewards[agent]
 
-                # Train agents
+                ## Train agents
                 for agent in self.agents:
                     if (
                         len(self.dqn_agents[agent].memory)
@@ -95,37 +122,37 @@ class MADQNTrainer_V1:
                     ):
                         self.dqn_agents[agent].replay_without_epsilon_decay()
 
-                # Update target networks periodically
+                ## Update target networks periodically
                 if episode % self.target_update == 0:
                     for agent in self.agents:
                         self.dqn_agents[agent].update_target_network()
 
-                # Render if needed
+                ## Render if needed
                 if episode % render_every == 0 and episode > 0:
                     self.env.render(actions)
 
                 observations = next_observations
                 episode_length += 1
 
-                # Check if episode is done
+                ## Check if episode is done
                 if any(terminations.values()) or any(truncations.values()):
                     if any(terminations.values()):
                         self.goal_count += 1
                     break
 
-            # Decay epsilon once per episode for all agents
+            ## Decay epsilon once per episode for all agents
             for agent in self.agents:
                 if self.dqn_agents[agent].epsilon > self.dqn_agents[agent].epsilon_min:
                     self.dqn_agents[agent].epsilon *= self.dqn_agents[
                         agent
                     ].epsilon_decay
 
-            # Store episode metrics
+            ## Store episode metrics
             total_reward = sum(episode_reward.values())
             self.episode_rewards.append(total_reward)
             self.episode_lengths.append(episode_length)
 
-            # Print progress
+            ## Print progress
             if episode % 50 == 0:
                 avg_reward = (
                     np.mean(self.episode_rewards[-50:]) if self.episode_rewards else 0
@@ -143,14 +170,19 @@ class MADQNTrainer_V1:
                     f"Epsilon: {epsilon:.4f}"
                 )
 
-            # Save models periodically
+            ## Save models periodically
             if episode % save_every == 0 and episode > 0:
                 self.save_models(f"checkpoint_{episode}_{self.model_prefix}")
 
         print(f"Training completed! Total goals scored: {self.goal_count}")
 
     def save_models(self, prefix):
-        """Save trained models"""
+        """
+        Save trained models
+
+        Params:
+            (str) prefix: Prefix path to save the models in
+        """
         for agent in self.agents:
             torch.save(
                 self.dqn_agents[agent].q_network.state_dict(), f"{prefix}_{agent}.pth"
@@ -158,16 +190,19 @@ class MADQNTrainer_V1:
         print(f"Models saved as {prefix}_*.pth")
 
     def plot_training_progress(self):
-        """Plot training metrics"""
+        """
+        Plot training metrics
+        """
         if not self.episode_rewards:
             print("No training data to plot")
             return
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-        # Plot rewards
+        ## Plot rewards
         ax1.plot(self.episode_rewards, alpha=0.3, color="blue")
-        # Moving average
+
+        ## Moving average
         window = 50
         if len(self.episode_rewards) >= window:
             moving_avg = [
@@ -183,7 +218,7 @@ class MADQNTrainer_V1:
         ax1.set_title("Training Rewards")
         ax1.grid(True)
 
-        # Plot episode lengths
+        ## Plot episode lengths
         ax2.plot(self.episode_lengths, alpha=0.3, color="green")
         if len(self.episode_lengths) >= window:
             moving_avg = [
@@ -204,9 +239,18 @@ class MADQNTrainer_V1:
 
 
 def train(model_prefix, num_episodes):
+    """
+    Function to call for training
+
+    Params:
+        (str) model_prefix: Path to the models
+        (int) num_episodes: Number of episodes to evaluate for
+    """
+    ## Initialize the env
     Path(f"saves/{model_prefix}_{num_episodes}").mkdir(parents=True, exist_ok=True)
     env = AbstractFootballEnv_V1(n_agents=2, render_mode="none")
 
+    ## Create the trainer
     trainer = MADQNTrainer_V1(
         env=env,
         model_prefix=model_prefix,
@@ -220,10 +264,12 @@ def train(model_prefix, num_episodes):
         target_update=50,
     )
 
+    ## Train
     trainer.train(
         num_episodes=num_episodes, max_steps=5000, render_every=500, save_every=500
     )
 
+    ## Plot training and save models
     trainer.plot_training_progress()
     trainer.save_models(
         f"saves/{model_prefix}_{num_episodes}/{model_prefix}_{num_episodes}"

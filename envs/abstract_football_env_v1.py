@@ -32,7 +32,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Ball params
         self.ball_size = 15
-        self.ball_push_strength = 3.0
+        self.ball_push_strength = 8.0
         self.ball_friction = 0.95
 
         self.kick_range = self.agent_size + self.ball_size + 3
@@ -159,7 +159,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Reset observations and env metadata
         self.frame_count = 0
         self.observations = {agent: self._observe(agent) for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
+        self.infos = {agent: {"kicked": False} for agent in self.agents}
 
         return self.observations, self.infos
 
@@ -179,7 +179,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.rewards = {agent: 0.0 for agent in self.agents}
         self.terminations = {agent: False for agent in self.agents}
         self.truncations = {agent: False for agent in self.agents}
-        self.infos = {agent: {} for agent in self.agents}
 
         ## Copy current agent and ball pos as previous positions
         self.prev_agent_pos = {
@@ -367,6 +366,17 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         return best_pos
 
+    def _can_kick_ball(self, agent_pos, ball_pos):
+        """
+        Check if the given position of agent can kick the ball
+
+        Params:
+            (float[2]) agent_pos: Position of the agent
+            (float[2]) ball_pos : Position of the ball
+        """
+        distance_to_ball = np.linalg.norm(agent_pos - ball_pos)
+        return distance_to_ball <= self.kick_range
+
     def _handle_kick_action(self, agent):
         """
         Handle the KICK action by pushing the ball if the agent is close enough.
@@ -378,10 +388,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Get the position of the agent
         agent_pos = self.agent_pos[agent]
 
-        ## Check if agent is close enough to kick the ball
-        distance_to_ball = np.linalg.norm(agent_pos - self.ball_pos)
+        ## Check if agnet is close enough to kick the ball
+        if self._can_kick_ball(agent_pos, self.ball_pos):
+            self.infos[agent]["kicked"] = True
 
-        if distance_to_ball <= self.kick_range:
             ## Calculate direction from agent to ball
             direction = self.ball_pos - agent_pos
 
@@ -480,7 +490,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.move_towards_ball_reward = {}
 
         for agent in self.agents:
-            # 1. Reward for moving towards the ball
+            ## 1. Reward for moving towards the ball
             prev_dist_to_ball = np.linalg.norm(
                 self.prev_ball_pos - self.prev_agent_pos[agent]
             )
@@ -491,6 +501,12 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self.move_towards_ball_reward[agent] = move_towards_ball_reward
 
             self.rewards[agent] = move_towards_ball_reward
+
+        ## Reward the agents that kicked if goal is scored
+        if self._check_goal_scored():
+            for agent in self.agents:
+                if self.infos[agent]["kicked"]:
+                    self.rewards[agent] += 10.0
 
     def _check_agent_agent_collision(self, pos, other_positions, min_dist=None):
         """
@@ -630,6 +646,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             print(f"\t\ttotal            : {self.rewards[agent]}")
             print()
             print(f"\tobservations     : {self.observations[agent].round(2)}")
+            print(f"\tinfos            : {self.infos[agent]}")
             print(f"\tlength of obs    : {len(self.observations[agent])}")
             print(f"\tball inside goal : {self._check_goal_scored()}")
 

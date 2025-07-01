@@ -9,7 +9,7 @@ if len(sys.argv) != 2:
     sys.exit(1)
 
 if sys.argv[1] == "run":
-    env = AbstractFootballEnv_V1(n_agents=2, field_width=800, render_mode="human")
+    env = AbstractFootballEnv_V1(n_agents=11, field_width=800, render_mode="human")
     observations, _ = env.reset()
 
     while True:

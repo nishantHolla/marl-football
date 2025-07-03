@@ -72,7 +72,7 @@ class MADQNEvaluator_V1:
 
         print(f"Models loaded from {prefix}_*.pth")
 
-    def evaluate(self, num_episodes=10, episode_length=200, render=True):
+    def evaluate(self, num_episodes=10, episode_length=1000, render=True, debug=False):
         """
         Evaluate trained agents
 
@@ -118,6 +118,21 @@ class MADQNEvaluator_V1:
                 if render:
                     self.env.render(actions)
 
+                to_stop = False
+                if debug:
+                    while True:
+                        n = input("q: quit, n: next, c: continue > ")
+                        if n == "c":
+                            to_stop = True
+                            break
+                        elif n == "q":
+                            return
+                        elif n == "n":
+                            break
+
+                if to_stop:
+                    break
+
                 ## Copy the observations
                 observations = next_observations.copy()
 
@@ -142,7 +157,7 @@ class MADQNEvaluator_V1:
         return avg_reward, goals_scored
 
 
-def evaluate(model_prefix, num_episodes):
+def evaluate(model_prefix, num_episodes, debug=False):
     """
     Function to call for evaluation
 
@@ -168,7 +183,7 @@ def evaluate(model_prefix, num_episodes):
 
     ## Load the models and evaluate
     evaluator.load_models(f"saves/{model_prefix}/{model_prefix}")
-    evaluator.evaluate(num_episodes=num_episodes)
+    evaluator.evaluate(num_episodes=num_episodes, debug=debug)
 
     ## Close the env
     env.close()

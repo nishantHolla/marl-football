@@ -32,16 +32,14 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Ball params
         self.ball_size = 15
-        self.ball_push_strength = 8.0
+        self.ball_push_strength = 12.0
         self.ball_friction = 0.95
 
         self.kick_range = self.agent_size + self.ball_size + 3
 
         ## Agent and ball positions
         self.agent_pos = {}
-        self.ball_pos = np.array(
-            [self.field_width // 2, self.field_height // 2], dtype=np.float32
-        )
+        self.ball_pos = self._get_random_ball_pos()
         self.ball_vel = np.array([0.0, 0.0], dtype=np.float32)
 
         ## Goalpost params
@@ -83,7 +81,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             agent: Box(
                 low=0,
                 high=max(self.field_width, self.field_height),
-                shape=(10 + 4 * (self.n_agents - 1),),
+                shape=(12,),
                 dtype=np.float32,
             )
             for agent in self.agents
@@ -137,12 +135,16 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.agents = self.possible_agents[:]
         self.agent_pos = {}
 
+        ## Reset ball position and velocity
+        self.ball_pos = self._get_random_ball_pos()
+        self.ball_vel = np.array([0.0, 0.0], dtype=np.float32)
+
         ## Place agents at random positions in the filed
         placed_pos = []
         for agent in self.agents:
             ## Generate position and check if it collides with other agents or the ball
             while True:
-                pos = self._get_random_pos(self.agent_size)
+                pos = self._get_random_agent_pos()
                 collides_with_agent = self._check_agent_agent_collision(pos, placed_pos)
                 collides_with_ball = self._check_agent_ball_collision(pos)
                 if not collides_with_ball and not collides_with_agent:
@@ -150,16 +152,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
                     placed_pos.append(pos)
                     break
 
-        ## Reset ball position and velocity
-        self.ball_pos = np.array(
-            [self.field_width // 2, self.field_height // 2], dtype=np.float32
-        )
-        self.ball_vel = np.array([0.0, 0.0], dtype=np.float32)
-
         ## Reset observations and env metadata
         self.frame_count = 0
         self.observations = {agent: self._observe(agent) for agent in self.agents}
-        self.infos = {agent: {"kicked": False} for agent in self.agents}
+        self.infos = {agent: {} for agent in self.agents}
 
         return self.observations, self.infos
 
@@ -388,10 +384,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Get the position of the agent
         agent_pos = self.agent_pos[agent]
 
-        ## Check if agnet is close enough to kick the ball
+        ## Check if agent is close enough to kick the ball
         if self._can_kick_ball(agent_pos, self.ball_pos):
-            self.infos[agent]["kicked"] = True
-
             ## Calculate direction from agent to ball
             direction = self.ball_pos - agent_pos
 
@@ -466,6 +460,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
             np.linalg.norm(self.agent_pos[agent] - pos) / field_size
             for pos in teammates_pos
         ]
+        norm_can_kick_ball = (
+            1.0 if self._can_kick_ball(self.agent_pos[agent], self.ball_pos) else 0.0
+        )
+        norm_behind_ball = 1.0 if self.agent_pos[agent][0] > self.ball_pos[0] else 0.0
 
         ## Concatenate observations into a single array and return it
         return np.concatenate(
@@ -475,8 +473,9 @@ class AbstractFootballEnv_V1(ParallelEnv):
                 norm_ball_vel,
                 norm_goal_dist,
                 norm_ball_dist,
-                *norm_teammates,
-                *norm_dist_teammates,
+                # *norm_teammates,
+                # *norm_dist_teammates,
+                [norm_can_kick_ball, norm_behind_ball],
             ]
         )
 
@@ -488,25 +487,37 @@ class AbstractFootballEnv_V1(ParallelEnv):
             Reward dict of agents and the rewards they earned
         """
         self.move_towards_ball_reward = {}
+        self.correct_kick_reward = {}
 
         for agent in self.agents:
-            ## 1. Reward for moving towards the ball
-            prev_dist_to_ball = np.linalg.norm(
+            action_idx = self.frame_actions[agent]
+            behind_the_ball = self.agent_pos[agent][0] > self.ball_pos[0]
+            can_kick_ball = self._can_kick_ball(self.agent_pos[agent], self.ball_pos)
+            prev_ball_dist = np.linalg.norm(
                 self.prev_ball_pos - self.prev_agent_pos[agent]
             )
-            curr_dist_to_ball = np.linalg.norm(
-                self.prev_ball_pos - self.agent_pos[agent]
-            )
-            move_towards_ball_reward = (prev_dist_to_ball - curr_dist_to_ball) * 0.1
+            curr_ball_dist = np.linalg.norm(self.prev_ball_pos - self.agent_pos[agent])
+
+            # 1. Move towards the ball
+            move_towards_ball_reward = (prev_ball_dist - curr_ball_dist) * 0.1
+            if prev_ball_dist == curr_ball_dist:
+                move_towards_ball_reward = -100.0
+
             self.move_towards_ball_reward[agent] = move_towards_ball_reward
 
-            self.rewards[agent] = move_towards_ball_reward
+            # 2. Kick the ball at right time
+            correct_kick_reward = 0.0
+            if self.action_list[action_idx]["name"] == "KICK":
+                if not can_kick_ball:
+                    correct_kick_reward = -1.0
+                else:
+                    correct_kick_reward = 10.0
+            else:
+                if can_kick_ball:
+                    correct_kick_reward = -0.5
+            self.correct_kick_reward[agent] = correct_kick_reward
 
-        ## Reward the agents that kicked if goal is scored
-        if self._check_goal_scored():
-            for agent in self.agents:
-                if self.infos[agent]["kicked"]:
-                    self.rewards[agent] += 10.0
+            self.rewards[agent] = move_towards_ball_reward + correct_kick_reward
 
     def _check_agent_agent_collision(self, pos, other_positions, min_dist=None):
         """
@@ -567,18 +578,28 @@ class AbstractFootballEnv_V1(ParallelEnv):
             top <= self.ball_pos[1].round() <= bottom
         )
 
-    def _get_random_pos(self, size):
+    def _get_random_agent_pos(self):
         """
-        Generate a ranomd position in the field
-
-        Params:
-            (float) size: Size of the entity for which the position will be used for
+        Generate a random position in the field for an agent
 
         Return:
             Random position vector
         """
-        x = np.random.uniform(size, self.field_width - size)
-        y = np.random.uniform(size, self.field_height - size)
+        x = np.random.uniform(self.field_width // 2, self.field_width - self.agent_size)
+        y = np.random.uniform(self.agent_size, self.field_height - self.agent_size)
+        return np.array([x, y], dtype=np.float32)
+
+    def _get_random_ball_pos(self):
+        """
+        Generate a random position in the field for an agent
+
+        Return:
+            Random position vector
+        """
+        left = self.field_width // 4
+        right = self.field_width // 4 * 3
+        x = np.random.uniform(left, right - self.agent_size)
+        y = np.random.uniform(self.ball_size, self.field_height - self.ball_size)
         return np.array([x, y], dtype=np.float32)
 
     def _clip_pos(self):
@@ -635,6 +656,11 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Print info about each agent
         for agent in self.agents:
             action = self.frame_actions[agent]
+            obs = self.observations[agent]
+            t_start = 10
+            t_end = 10 + (2 * (self.n_agents - 1))
+            dt_start = t_end
+            dt_end = dt_start + (self.n_agents - 1)
 
             print(f"{agent}:")
             print(f"\tprevious position: {self.prev_agent_pos[agent].round(2)}")
@@ -643,10 +669,19 @@ class AbstractFootballEnv_V1(ParallelEnv):
             print()
             print("\trewards          :")
             print(f"\t\tmove towards ball: {self.move_towards_ball_reward[agent]}")
+            print(f"\t\tcorrect kick     : {self.correct_kick_reward[agent]}")
             print(f"\t\ttotal            : {self.rewards[agent]}")
             print()
-            print(f"\tobservations     : {self.observations[agent].round(2)}")
-            print(f"\tinfos            : {self.infos[agent]}")
+            print(f"\tobservations({len(obs)})     :")
+            print(f"\t\tself pos       : {obs[0:2].round(2)}")
+            print(f"\t\tball pos       : {obs[2:4].round(2)}")
+            print(f"\t\tball vel       : {obs[4:6].round(2)}")
+            print(f"\t\tgoal dist      : {obs[6:8].round(2)}")
+            print(f"\t\tball dist      : {obs[8:10].round(2)}")
+            # print(f"\t\tteammates      : {obs[t_start:t_end].round(2)}")
+            # print(f"\t\tteammate dist  : {obs[dt_start:dt_end].round(2)}")
+            print(f"\t\tcan kick ball  : {obs[10]}")
+            print(f"\t\tbehind ball    : {obs[11]}")
             print(f"\tlength of obs    : {len(self.observations[agent])}")
             print(f"\tball inside goal : {self._check_goal_scored()}")
 

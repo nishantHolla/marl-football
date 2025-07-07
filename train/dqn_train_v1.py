@@ -266,7 +266,7 @@ def train(model_prefix, num_episodes):
 
     ## Train
     trainer.train(
-        num_episodes=num_episodes, max_steps=1000, render_every=500, save_every=500
+        num_episodes=num_episodes, max_steps=5000, render_every=500, save_every=500
     )
 
     ## Plot training and save models

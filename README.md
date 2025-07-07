@@ -19,22 +19,17 @@ source ./.cRAIS-MARL/bin/activate
 pip install -r requirements.txt
 ```
 
-- Test if it works
+- Run the simulation step-by-step
 ```bash
-python main.py
+python main.py debug
 ```
 
-- Create a new branch and switch to it. Give the branch a different name
+- Train the DQN network with the parameters defined in `main.py`
 ```bash
-git branch <your-branch-name>
-git switch <your-branch-name>
+python main.py train
 ```
 
-- Update the code
-
-- Push to the branch
+- Evaluate the trained model with the parameters defined in `main.py`
 ```bash
-git push origin <your-branch-name>
+python main.py eval
 ```
-
-- Open pull request in github

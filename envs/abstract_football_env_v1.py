@@ -43,7 +43,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.ball_vel = np.array([0.0, 0.0], dtype=np.float32)
 
         ## Goalpost params
-        self.goal_size = np.array([20, self.field_height // 4])
+        self.goal_size = np.array([30, self.field_height // 3])
         self.goal_center = np.array([30, self.field_height // 2])
 
         ## Goalpost position
@@ -239,7 +239,13 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Check if goal is scored and calculate agent rewards
         self.goal_scored = self._check_goal_scored()
-        self._calculate_rewards()
+
+        if self.goal_scored:
+            for agent in self.agents:
+                self.rewards[agent] = 50.0
+                self.terminations[agent] = True
+        else:
+            self._calculate_rewards()
 
         ## Get the new observations of the agents
         self.observations = {agent: self._observe(agent) for agent in self.agents}
@@ -417,7 +423,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             self._init_viewer()
 
         ## Log frame info and render the view using the viewer
-        self._log_frame_info()
+        # self._log_frame_info()
         self.viewer.render(self.agent_pos, self.ball_pos)
 
     def close(self):
@@ -496,12 +502,25 @@ class AbstractFootballEnv_V1(ParallelEnv):
             prev_ball_dist = np.linalg.norm(
                 self.prev_ball_pos - self.prev_agent_pos[agent]
             )
-            curr_ball_dist = np.linalg.norm(self.prev_ball_pos - self.agent_pos[agent])
+            curr_ball_dist = np.linalg.norm(self.ball_pos - self.agent_pos[agent])
 
             # 1. Move towards the ball
-            move_towards_ball_reward = (prev_ball_dist - curr_ball_dist) * 0.1
-            if prev_ball_dist == curr_ball_dist:
-                move_towards_ball_reward = -100.0
+            distance_improvement = prev_ball_dist - curr_ball_dist
+
+            if distance_improvement > 0.5:  # Big movement towards ball
+                move_towards_ball_reward = distance_improvement
+            elif distance_improvement > 0.1:  # Small movement towards ball
+                move_towards_ball_reward = 0.5
+            elif distance_improvement > -0.1:  # Roughly same distance
+                move_towards_ball_reward = 0.0
+            else:  # Moving away from ball
+                move_towards_ball_reward = distance_improvement * 1.0
+
+            # Additional reward for being close to ball
+            if curr_ball_dist < 50:  # Close to ball
+                move_towards_ball_reward += 1.0
+            elif curr_ball_dist < 100:  # Moderately close
+                move_towards_ball_reward += 0.5
 
             self.move_towards_ball_reward[agent] = move_towards_ball_reward
 
@@ -509,15 +528,34 @@ class AbstractFootballEnv_V1(ParallelEnv):
             correct_kick_reward = 0.0
             if self.action_list[action_idx]["name"] == "KICK":
                 if not can_kick_ball:
-                    correct_kick_reward = -1.0
-                else:
-                    correct_kick_reward = 10.0
-            else:
-                if can_kick_ball:
                     correct_kick_reward = -0.5
+                else:
+                    correct_kick_reward = 5.0
+                    if (np.linalg.norm(self.ball_vel) > 1.0) and self.ball_vel[0] < 0:
+                        correct_kick_reward += 3.0
+            else:
+                if can_kick_ball and behind_the_ball:
+                    correct_kick_reward = -0.2
+                else:
+                    correct_kick_reward = 0.0
             self.correct_kick_reward[agent] = correct_kick_reward
 
-            self.rewards[agent] = move_towards_ball_reward + correct_kick_reward
+            ball_towards_goal_reward = 0.0
+            if self.ball_vel[0] < -1.0:  # Ball moving towards goal
+                ball_towards_goal_reward = 1.0
+            self.ball_towards_goal_reward = ball_towards_goal_reward
+
+            # 4. Small exploration bonus for taking action (not STAY)
+            exploration_bonus = (
+                0.1 if self.action_list[action_idx]["name"] != "STAY" else 0.0
+            )
+
+            self.rewards[agent] = (
+                move_towards_ball_reward
+                + correct_kick_reward
+                + ball_towards_goal_reward
+                + exploration_bonus
+            )
 
     def _check_agent_agent_collision(self, pos, other_positions, min_dist=None):
         """
@@ -670,6 +708,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             print("\trewards          :")
             print(f"\t\tmove towards ball: {self.move_towards_ball_reward[agent]}")
             print(f"\t\tcorrect kick     : {self.correct_kick_reward[agent]}")
+            print(f"\t\tball towards goal: {self.ball_towards_goal_reward}")
             print(f"\t\ttotal            : {self.rewards[agent]}")
             print()
             print(f"\tobservations({len(obs)})     :")

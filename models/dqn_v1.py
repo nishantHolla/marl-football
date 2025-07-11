@@ -11,7 +11,7 @@ class DQN_V1(nn.Module):
     Deep Q-Network for individual agents
     """
 
-    def __init__(self, state_size, action_size, hidden_size=128):
+    def __init__(self, state_size, action_size, hidden_size=256):
         """
         Initialize the DQN
 
@@ -23,16 +23,32 @@ class DQN_V1(nn.Module):
         self.fc1 = nn.Linear(state_size, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, hidden_size)
-        self.fc4 = nn.Linear(hidden_size, action_size)
+        self.fc4 = nn.Linear(hidden_size, hidden_size // 2)
+        self.fc5 = nn.Linear(hidden_size // 2, action_size)
+        self.dropout = nn.Dropout(0.1)
+
+        # Initialize weights
+        self._init_weights()
+
+    def _init_weights(self):
+        """Initialize network weights using Xavier initialization"""
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
         """
         Forwarding function
         """
         x = torch.relu(self.fc1(x))
+        x = self.dropout(x)
         x = torch.relu(self.fc2(x))
+        x = self.dropout(x)
         x = torch.relu(self.fc3(x))
-        return self.fc4(x)
+        x = self.dropout(x)
+        x = torch.relu(self.fc4(x))
+        return self.fc5(x)
 
 
 class DQNAgent_V1:
@@ -81,6 +97,9 @@ class DQNAgent_V1:
         self.q_network = DQN_V1(state_size, action_size).to(self.device)
         self.target_network = DQN_V1(state_size, action_size).to(self.device)
         self.optimizer = optim.Adam(self.q_network.parameters(), lr=lr)
+        self.scheduler = optim.lr_scheduler.StepLR(
+            self.optimizer, step_size=1000, gamma=0.9
+        )
 
         ## Experience replay
         self.memory = deque(maxlen=memory_size)
@@ -133,7 +152,12 @@ class DQNAgent_V1:
 
         self.optimizer.zero_grad()
         loss.backward()
+
+        # Add gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0)
+
         self.optimizer.step()
+        self.scheduler.step()
 
     def replay_without_epsilon_decay(self):
         """
@@ -157,4 +181,8 @@ class DQNAgent_V1:
 
         self.optimizer.zero_grad()
         loss.backward()
+
+        # Add gradient clipping for stability
+        torch.nn.utils.clip_grad_norm_(self.q_network.parameters(), max_norm=1.0)
+
         self.optimizer.step()

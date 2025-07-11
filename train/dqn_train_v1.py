@@ -16,14 +16,14 @@ class MADQNTrainer_V1:
         self,
         env,
         model_prefix,
-        lr=0.001,
-        gamma=0.95,
-        epsilon=1.0,
-        epsilon_min=0.01,
-        epsilon_decay=0.995,
-        memory_size=10000,
-        batch_size=32,
-        target_update=100,
+        lr,
+        gamma,
+        epsilon,
+        epsilon_min,
+        epsilon_decay,
+        memory_size,
+        batch_size,
+        target_update,
     ):
         """
         Initialize the trainer with the given parameters
@@ -71,7 +71,7 @@ class MADQNTrainer_V1:
         self.episode_lengths = []
         self.goal_count = 0
 
-    def train(self, num_episodes=1000, max_steps=200, render_every=100, save_every=100):
+    def train(self, num_episodes, max_steps, render_every, save_every):
         """
         Train the multi-agent system
 
@@ -162,9 +162,19 @@ class MADQNTrainer_V1:
                 )
                 epsilon = self.dqn_agents[self.agents[0]].epsilon
 
+                # Calculate reward statistics
+                recent_rewards = (
+                    self.episode_rewards[-50:]
+                    if len(self.episode_rewards) >= 50
+                    else self.episode_rewards
+                )
+                min_reward = np.min(recent_rewards) if recent_rewards else 0
+                max_reward = np.max(recent_rewards) if recent_rewards else 0
+
                 print(
                     f"Episode {episode:4d} | "
-                    f"Avg Reward: {avg_reward:6.2f} | "
+                    f"Avg Reward: {avg_reward:7.2f} | "
+                    f"Min/Max: {min_reward:6.1f}/{max_reward:6.1f} | "
                     f"Avg Length: {avg_length:6.2f} | "
                     f"Goals: {self.goal_count:3d} | "
                     f"Epsilon: {epsilon:.4f}"
@@ -248,25 +258,25 @@ def train(model_prefix, num_episodes):
     """
     ## Initialize the env
     Path(f"saves/{model_prefix}_{num_episodes}").mkdir(parents=True, exist_ok=True)
-    env = AbstractFootballEnv_V1(n_agents=2, render_mode="none")
+    env = AbstractFootballEnv_V1(n_agents=2, render_mode="human")
 
     ## Create the trainer
     trainer = MADQNTrainer_V1(
         env=env,
         model_prefix=model_prefix,
-        lr=0.0005,
+        lr=0.001,
         gamma=0.99,
         epsilon=1.0,
-        epsilon_min=0.01,
-        epsilon_decay=0.9995,
+        epsilon_min=0.05,
+        epsilon_decay=0.995,
         memory_size=50000,
-        batch_size=64,
-        target_update=50,
+        batch_size=32,
+        target_update=100,
     )
 
     ## Train
     trainer.train(
-        num_episodes=num_episodes, max_steps=5000, render_every=500, save_every=500
+        num_episodes=num_episodes, max_steps=1000, render_every=1, save_every=500
     )
 
     ## Plot training and save models

@@ -24,6 +24,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.field_width = field_width
         self.field_height = round(field_width * 2 / 3)
 
+        ## Obstacle params
+        self.obstacle_pos = np.array([self.field_width / 4, self.field_height / 2])
+        self.obstacle_size = 20
+
         ## Agent params
         self.agent_size = 20
         self.agent_speed = 3
@@ -81,7 +85,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             agent: Box(
                 low=0,
                 high=max(self.field_width, self.field_height),
-                shape=(12,),
+                shape=(16,),
                 dtype=np.float32,
             )
             for agent in self.agents
@@ -204,8 +208,9 @@ class AbstractFootballEnv_V1(ParallelEnv):
                 intended_pos, other_agent_positions
             )
             ball_collision = self._check_agent_ball_collision(intended_pos)
+            obstacle_collision = self._check_agent_obstacle_collision(intended_pos)
 
-            if not agent_collision and not ball_collision:
+            if not agent_collision and not ball_collision and not obstacle_collision:
                 ## No collision - move to intended position
                 self.agent_pos[agent] = intended_pos
             else:
@@ -273,8 +278,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
         # Get all current agent positions
         all_agent_positions = list(self.agent_pos.values())
 
-        # Check if the intended position would cause collision with any agent
-        collision_detected = False
+        # Check if the intended position would cause collision with any agent or obstacle
+        collision_detected = self._check_obstacle_ball_collision(intended_ball_pos)
         for agent_pos in all_agent_positions:
             distance = np.linalg.norm(intended_ball_pos - agent_pos)
             collision_distance = self.ball_size + self.agent_size
@@ -299,13 +304,16 @@ class AbstractFootballEnv_V1(ParallelEnv):
         without colliding with any agent.
         """
         # Try moving the ball in small steps along its velocity vector
-        max_steps = 20
+        max_steps = 1
         current_pos = self.ball_pos.copy()
         step_vel = self.ball_vel / max_steps
         safe_pos = current_pos.copy()
 
         for step in range(1, max_steps + 1):
             test_pos = current_pos + step_vel * step
+
+            if self._check_obstacle_ball_collision(test_pos):
+                break
 
             # Check collision with all agents at this test position
             collision_detected = False
@@ -331,7 +339,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
     ):
         """
         Try to move the agent as much as possible in the intended direction
-        without causing collisions with other agents or the ball.
+        without causing collisions with other agents the ball or obstacle.
 
         Params:
             (str)        agent                : Agent to resolve the collision for
@@ -344,8 +352,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Get the current position of the agent
         current_pos = self.agent_pos[agent]
 
-        ## Try to move step by step (10 steps) to see how far we can go
-        max_steps = 10
+        ## Try to move step by step (1 steps) to see how far we can go
+        max_steps = 1
         best_pos = current_pos.copy()
 
         for step in range(1, max_steps + 1):
@@ -357,9 +365,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
             agent_collision = self._check_agent_agent_collision(
                 test_pos, other_agent_positions
             )
+            obstacle_collision = self._check_agent_obstacle_collision(test_pos)
             ball_collision = self._check_agent_ball_collision(test_pos)
 
-            if not agent_collision and not ball_collision:
+            if not agent_collision and not ball_collision and not obstacle_collision:
                 ## This position is valid, update best position
                 best_pos = test_pos.copy()
             else:
@@ -424,7 +433,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Log frame info and render the view using the viewer
         # self._log_frame_info()
-        self.viewer.render(self.agent_pos, self.ball_pos)
+        self.viewer.render(self.agent_pos, self.ball_pos, self.obstacle_pos)
 
     def close(self):
         """
@@ -454,6 +463,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
         teammates_pos = [
             self.agent_pos[other] for other in self.agents if other != agent
         ]
+        obstacle_dist = np.linalg.norm(self.agent_pos[agent] - self.obstacle_pos)
+        ball_obstacle_dist = np.linalg.norm(self.ball_pos - self.obstacle_pos)
 
         ## Normalize the values using filed size
         norm_self_pos = self.agent_pos[agent] / field_size
@@ -461,6 +472,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
         norm_ball_vel = self.ball_vel / field_size
         norm_goal_dist = goal_dist / field_size
         norm_ball_dist = ball_dist / field_size
+        norm_obstacle_dist = obstacle_dist / field_size
+        norm_ball_obstacle_dirst = ball_obstacle_dist / field_size
         norm_teammates = [teammates_pos / field_size for teammates_pos in teammates_pos]
         norm_dist_teammates = [
             np.linalg.norm(self.agent_pos[agent] - pos) / field_size
@@ -479,6 +492,8 @@ class AbstractFootballEnv_V1(ParallelEnv):
                 norm_ball_vel,
                 norm_goal_dist,
                 norm_ball_dist,
+                norm_obstacle_dist,
+                norm_ball_obstacle_dirst,
                 # *norm_teammates,
                 # *norm_dist_teammates,
                 [norm_can_kick_ball, norm_behind_ball],
@@ -527,7 +542,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             # 2. Kick the ball at right time
             correct_kick_reward = 0.0
             if self.action_list[action_idx]["name"] == "KICK":
-                if not can_kick_ball:
+                if not can_kick_ball or not behind_the_ball:
                     correct_kick_reward = -0.5
                 else:
                     correct_kick_reward = 5.0
@@ -598,6 +613,39 @@ class AbstractFootballEnv_V1(ParallelEnv):
         ## Check for collision
         return np.linalg.norm(pos - self.ball_pos) < min_dist
 
+    def _check_agent_obstacle_collision(self, pos, min_dist=None):
+        """
+        Check if the given position of the agent collides with the obstacle position
+
+        Params:
+            (float[2]) pos     : Position of the agent to check for collision
+            (float)    min_dist: Minimum dist possible between agent and ball without collision
+
+        Return:
+            True if the agent collides with the obstacle else False
+        """
+
+        ## Calculate min_dist if not given
+        if min_dist is None:
+            min_dist = self.agent_size + self.obstacle_size
+
+        ## Check for collistion
+        return np.linalg.norm(pos - self.obstacle_pos) < min_dist
+
+    def _check_obstacle_ball_collision(self, ball_pos):
+        """
+        Check if the ball collides with the obstacle
+
+        Params:
+            (float[2]) ball_pos: Position of ball to check the collision with
+
+        Returns:
+            True if the ball collides with the obstacle else False
+        """
+
+        min_dist = self.ball_size + self.obstacle_size
+        return np.linalg.norm(ball_pos - self.obstacle_pos) < min_dist
+
     def _check_goal_scored(self):
         """
         Check if the ball is in the goal zone
@@ -634,10 +682,12 @@ class AbstractFootballEnv_V1(ParallelEnv):
         Return:
             Random position vector
         """
-        left = self.field_width // 4
-        right = self.field_width // 4 * 3
+        left = self.field_width // 3
+        right = self.field_width // 2
+        top = self.field_height // 4
+        bottom = self.field_height // 4 * 3
         x = np.random.uniform(left, right - self.agent_size)
-        y = np.random.uniform(self.ball_size, self.field_height - self.ball_size)
+        y = np.random.uniform(top, bottom - self.ball_size)
         return np.array([x, y], dtype=np.float32)
 
     def _clip_pos(self):
@@ -683,6 +733,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
                 "ball_size": self.ball_size,
                 "goal_zone": self.goal_zone,
                 "goal_size": self.goal_size,
+                "obstacle_size": self.obstacle_size,
             }
         )
 
@@ -717,10 +768,12 @@ class AbstractFootballEnv_V1(ParallelEnv):
             print(f"\t\tball vel       : {obs[4:6].round(2)}")
             print(f"\t\tgoal dist      : {obs[6:8].round(2)}")
             print(f"\t\tball dist      : {obs[8:10].round(2)}")
+            print(f"\t\tobst dist      : {obs[10:12].round(2)}")
+            print(f"\t\tball obst dist : {obs[12:14].round(2)} ")
             # print(f"\t\tteammates      : {obs[t_start:t_end].round(2)}")
             # print(f"\t\tteammate dist  : {obs[dt_start:dt_end].round(2)}")
-            print(f"\t\tcan kick ball  : {obs[10]}")
-            print(f"\t\tbehind ball    : {obs[11]}")
+            print(f"\t\tcan kick ball  : {obs[14]}")
+            print(f"\t\tbehind ball    : {obs[15]}")
             print(f"\tlength of obs    : {len(self.observations[agent])}")
             print(f"\tball inside goal : {self._check_goal_scored()}")
 

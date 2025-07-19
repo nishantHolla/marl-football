@@ -19,6 +19,7 @@ class Viewer:
         self.ball_size = options["ball_size"]
         self.goal_zone = options["goal_zone"]
         self.goal_size = options["goal_size"]
+        self.obstacle_size = options["obstacle_size"]
         self.goal_box_thickness = 10
 
         ## Define the rectangles that make up the goalpost
@@ -64,13 +65,14 @@ class Viewer:
         ## Destroy pygame
         pygame.quit()
 
-    def render(self, agent_positions, ball_position):
+    def render(self, agent_positions, ball_position, obstacle_position):
         """
         Render the env with the given positions of agents and ball position
 
         Params:
-            (dict)     agent_positions: Key value pair of agent name and their position
-            (float[2]) ball_position  : Position vector of the ball
+            (dict)     agent_positions  : Key value pair of agent name and their position
+            (float[2]) ball_position    : Position vector of the ball
+            (float[2]) obstacle_position: Position of the obstacle
         """
         ## Draw the ground image
         self.screen.blit(self.football_pitch_image, (0, 0))
@@ -90,6 +92,12 @@ class Viewer:
         ## Draw football
         self.screen.blit(
             self.football_image, ball_position - (self.football_image.get_width() / 2)
+        )
+
+        ## Draw obstacle
+        self.screen.blit(
+            self.obstacle_image,
+            obstacle_position - (self.obstacle_image.get_width() / 2),
         )
 
         ## Update display
@@ -115,4 +123,10 @@ class Viewer:
         agent_image = pygame.image.load("resources/player.png")
         self.agent_image = pygame.transform.scale(
             agent_image, (2 * self.agent_size, 2 * self.agent_size)
+        )
+
+        ## Load the obstacle image and scale it to required size
+        obstacle_image = pygame.image.load("resources/obstacle.png")
+        self.obstacle_image = pygame.transform.scale(
+            obstacle_image, (2 * self.obstacle_size, 2 * self.obstacle_size)
         )

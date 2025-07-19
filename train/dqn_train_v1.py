@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from pathlib import Path
+import threading
+
+render_toggle = threading.Event()
+running_flag = threading.Event()
 
 
 class MADQNTrainer_V1:
@@ -71,14 +75,13 @@ class MADQNTrainer_V1:
         self.episode_lengths = []
         self.goal_count = 0
 
-    def train(self, num_episodes, max_steps, render_every, save_every):
+    def train(self, num_episodes, max_steps, save_every):
         """
         Train the multi-agent system
 
         Params:
             (int) num_episodes: Number of episodes to train for
             (int) max_steps   : Number of steps to perform in each episode
-            (int) render_every: Render every n episodes
             (int) save_every  : Save as checkpoint after every n episodes
         """
         print(f"Starting training for {num_episodes} episodes...")
@@ -86,11 +89,17 @@ class MADQNTrainer_V1:
         print(f"Initial epsilon: {self.dqn_agents[self.agents[0]].epsilon:.3f}")
 
         for episode in range(num_episodes):
+            if not running_flag.is_set():
+                return
+
             observations, infos = self.env.reset()
             episode_reward = {agent: 0 for agent in self.agents}
             episode_length = 0
 
             for step in range(max_steps):
+                if not running_flag.is_set():
+                    return
+
                 ## Get actions from all agents
                 actions = {}
                 for agent in self.agents:
@@ -128,7 +137,7 @@ class MADQNTrainer_V1:
                         self.dqn_agents[agent].update_target_network()
 
                 ## Render if needed
-                if episode % render_every == 0 and episode > 0:
+                if render_toggle.is_set():
                     self.env.render(actions)
 
                 observations = next_observations
@@ -248,16 +257,7 @@ class MADQNTrainer_V1:
         plt.show()
 
 
-def train(model_prefix, num_episodes):
-    """
-    Function to call for training
-
-    Params:
-        (str) model_prefix: Path to the models
-        (int) num_episodes: Number of episodes to evaluate for
-    """
-    ## Initialize the env
-    Path(f"saves/{model_prefix}_{num_episodes}").mkdir(parents=True, exist_ok=True)
+def train_work(model_prefix, num_episodes):
     env = AbstractFootballEnv_V1(n_agents=2, render_mode="human")
 
     ## Create the trainer
@@ -275,14 +275,48 @@ def train(model_prefix, num_episodes):
     )
 
     ## Train
-    trainer.train(
-        num_episodes=num_episodes, max_steps=1000, render_every=1, save_every=500
-    )
+    trainer.train(num_episodes=num_episodes, max_steps=1000, save_every=500)
 
     ## Plot training and save models
-    trainer.plot_training_progress()
-    trainer.save_models(
-        f"saves/{model_prefix}_{num_episodes}/{model_prefix}_{num_episodes}"
-    )
+    if running_flag.is_set():
+        trainer.plot_training_progress()
+        trainer.save_models(
+            f"saves/{model_prefix}_{num_episodes}/{model_prefix}_{num_episodes}"
+        )
 
     env.close()
+
+
+def train(model_prefix, num_episodes):
+    """
+    Function to call for training
+
+    Params:
+        (str) model_prefix: Path to the models
+        (int) num_episodes: Number of episodes to evaluate for
+    """
+    ## Initialize the env
+    Path(f"saves/{model_prefix}_{num_episodes}").mkdir(parents=True, exist_ok=True)
+    render_toggle.clear()
+    running_flag.set()
+
+    train_thread = threading.Thread(
+        target=train_work,
+        daemon=True,
+        kwargs={"model_prefix": model_prefix, "num_episodes": num_episodes},
+    )
+    train_thread.start()
+
+    while running_flag.is_set():
+        try:
+            input()
+        except KeyboardInterrupt:
+            running_flag.clear()
+            break
+
+        if render_toggle.is_set():
+            render_toggle.clear()
+        else:
+            render_toggle.set()
+
+    train_thread.join()

@@ -5,7 +5,7 @@ import numpy as np
 
 
 class AbstractFootballEnv_V1(ParallelEnv):
-    """Abstract Footbal Environment with N agents, a ball and a Goalpost"""
+    """Abstract Football Environment with N agents, a ball and a Goalpost"""
 
     metadata = {"render_modes": ["human", "none"], "name": "abstract_football_env_v1"}
 
@@ -85,7 +85,7 @@ class AbstractFootballEnv_V1(ParallelEnv):
             agent: Box(
                 low=0,
                 high=max(self.field_width, self.field_height),
-                shape=(16,),
+                shape=(29,),
                 dtype=np.float32,
             )
             for agent in self.agents
@@ -453,52 +453,150 @@ class AbstractFootballEnv_V1(ParallelEnv):
         Return:
             Observation array of the given agent
         """
-        ## NOTE: If you modify the return array of this function don't forget to update the shape
-        ##       parameter in observation_spaces of the __init__ function
-
-        ## Calculate field size, distance between goal and ball, and distance between agent and ball
         field_size = np.array([self.field_width, self.field_height], dtype=np.float32)
-        goal_dist = np.linalg.norm(self.goal_center - self.ball_pos)
-        ball_dist = np.linalg.norm(self.agent_pos[agent] - self.ball_pos)
+
+        # Positions
+        self_pos = self.agent_pos[agent]
+        ball_pos = self.ball_pos
+        obstacle_pos = self.obstacle_pos
+        goal_pos = self.goal_center
+
+        # Normalized absolute values
+        norm_self_pos = self_pos / field_size
+        norm_ball_pos = ball_pos / field_size
+        norm_ball_vel = self.ball_vel / field_size
+        norm_obstacle_pos = obstacle_pos / field_size
+        norm_goal_pos = goal_pos / field_size
+
+        # Relative direction vectors (normalized)
+        vec_agent_to_ball = (ball_pos - self_pos) / field_size
+        vec_agent_to_goal = (goal_pos - self_pos) / field_size
+        vec_ball_to_goal = (goal_pos - ball_pos) / field_size
+        vec_ball_to_obstacle = (obstacle_pos - ball_pos) / field_size
+
+        # Scalar distances (normalized)
+        norm_goal_dist = np.linalg.norm(goal_pos - ball_pos) / np.linalg.norm(
+            field_size
+        )
+        norm_ball_dist = np.linalg.norm(self_pos - ball_pos) / np.linalg.norm(
+            field_size
+        )
+        norm_obstacle_dist = np.linalg.norm(self_pos - obstacle_pos) / np.linalg.norm(
+            field_size
+        )
+        norm_ball_obstacle_dist = np.linalg.norm(
+            ball_pos - obstacle_pos
+        ) / np.linalg.norm(field_size)
+
+        # Teammates info
         teammates_pos = [
             self.agent_pos[other] for other in self.agents if other != agent
         ]
-        obstacle_dist = np.linalg.norm(self.agent_pos[agent] - self.obstacle_pos)
-        ball_obstacle_dist = np.linalg.norm(self.ball_pos - self.obstacle_pos)
-
-        ## Normalize the values using filed size
-        norm_self_pos = self.agent_pos[agent] / field_size
-        norm_ball_pos = self.ball_pos / field_size
-        norm_ball_vel = self.ball_vel / field_size
-        norm_goal_dist = goal_dist / field_size
-        norm_ball_dist = ball_dist / field_size
-        norm_obstacle_dist = obstacle_dist / field_size
-        norm_ball_obstacle_dirst = ball_obstacle_dist / field_size
-        norm_teammates = [teammates_pos / field_size for teammates_pos in teammates_pos]
+        norm_teammates = [pos / field_size for pos in teammates_pos]
         norm_dist_teammates = [
-            np.linalg.norm(self.agent_pos[agent] - pos) / field_size
+            np.linalg.norm(self_pos - pos) / np.linalg.norm(field_size)
             for pos in teammates_pos
         ]
-        norm_can_kick_ball = (
-            1.0 if self._can_kick_ball(self.agent_pos[agent], self.ball_pos) else 0.0
+        norm_teammates_flat = (
+            np.concatenate(norm_teammates) if norm_teammates else np.array([])
         )
-        norm_behind_ball = 1.0 if self.agent_pos[agent][0] > self.ball_pos[0] else 0.0
+        norm_dist_teammates_flat = (
+            np.array(norm_dist_teammates) if norm_dist_teammates else np.array([])
+        )
 
-        ## Concatenate observations into a single array and return it
-        return np.concatenate(
+        # Discrete info
+        norm_can_kick_ball = 1.0 if self._can_kick_ball(self_pos, ball_pos) else 0.0
+        norm_behind_ball = 1.0 if self_pos[0] > ball_pos[0] else 0.0
+
+        # Agent ID one-hot (for parameter sharing)
+        agent_index = self.agents.index(agent)
+        agent_id_onehot = np.eye(len(self.agents))[agent_index]
+
+        # Optionally include last action (if tracking)
+        # last_action = self.last_actions.get(agent, np.zeros(2)) / field_size
+
+        # Concatenate all observation components
+        obs = np.concatenate(
             [
-                norm_self_pos,
-                norm_ball_pos,
-                norm_ball_vel,
-                norm_goal_dist,
-                norm_ball_dist,
-                norm_obstacle_dist,
-                norm_ball_obstacle_dirst,
-                # *norm_teammates,
-                # *norm_dist_teammates,
-                [norm_can_kick_ball, norm_behind_ball],
+                norm_self_pos,  # 2
+                norm_ball_pos,  # 2
+                norm_ball_vel,  # 2
+                norm_goal_pos,  # 2
+                norm_obstacle_pos,  # 2
+                vec_agent_to_ball,  # 2
+                vec_agent_to_goal,  # 2
+                vec_ball_to_goal,  # 2
+                vec_ball_to_obstacle,  # 2
+                [norm_goal_dist],  # 1
+                [norm_ball_dist],  # 1
+                [norm_obstacle_dist],  # 1
+                [norm_ball_obstacle_dist],  # 1
+                norm_teammates_flat,  # 2 * (n-1)
+                norm_dist_teammates_flat,  # (n-1)
+                [norm_can_kick_ball, norm_behind_ball],  # 2
+                agent_id_onehot,  # n
+                # last_action                # 2 (optional)
             ]
         )
+
+        return obs
+
+    # def _observe(self, agent):
+    #     """
+    #     Get the observations of the given agent
+    #
+    #     Params:
+    #         (str) agent: Name of the agent to get the observations for
+    #
+    #     Return:
+    #         Observation array of the given agent
+    #     """
+    #     ## NOTE: If you modify the return array of this function don't forget to update the shape
+    #     ##       parameter in observation_spaces of the __init__ function
+    #
+    #     ## Calculate field size, distance between goal and ball, and distance between agent and ball
+    #     field_size = np.array([self.field_width, self.field_height], dtype=np.float32)
+    #     goal_dist = np.linalg.norm(self.goal_center - self.ball_pos)
+    #     ball_dist = np.linalg.norm(self.agent_pos[agent] - self.ball_pos)
+    #     teammates_pos = [
+    #         self.agent_pos[other] for other in self.agents if other != agent
+    #     ]
+    #     obstacle_dist = np.linalg.norm(self.agent_pos[agent] - self.obstacle_pos)
+    #     ball_obstacle_dist = np.linalg.norm(self.ball_pos - self.obstacle_pos)
+    #
+    #     ## Normalize the values using filed size
+    #     norm_self_pos = self.agent_pos[agent] / field_size
+    #     norm_ball_pos = self.ball_pos / field_size
+    #     norm_ball_vel = self.ball_vel / field_size
+    #     norm_goal_dist = goal_dist / field_size
+    #     norm_ball_dist = ball_dist / field_size
+    #     norm_obstacle_dist = obstacle_dist / field_size
+    #     norm_ball_obstacle_dirst = ball_obstacle_dist / field_size
+    #     norm_teammates = [teammates_pos / field_size for teammates_pos in teammates_pos]
+    #     norm_dist_teammates = [
+    #         np.linalg.norm(self.agent_pos[agent] - pos) / field_size
+    #         for pos in teammates_pos
+    #     ]
+    #     norm_can_kick_ball = (
+    #         1.0 if self._can_kick_ball(self.agent_pos[agent], self.ball_pos) else 0.0
+    #     )
+    #     norm_behind_ball = 1.0 if self.agent_pos[agent][0] > self.ball_pos[0] else 0.0
+    #
+    #     ## Concatenate observations into a single array and return it
+    #     return np.concatenate(
+    #         [
+    #             norm_self_pos,
+    #             norm_ball_pos,
+    #             norm_ball_vel,
+    #             norm_goal_dist,
+    #             norm_ball_dist,
+    #             norm_obstacle_dist,
+    #             norm_ball_obstacle_dirst,
+    #             # *norm_teammates,
+    #             # *norm_dist_teammates,
+    #             [norm_can_kick_ball, norm_behind_ball],
+    #         ]
+    #     )
 
     def _calculate_rewards(self):
         """
@@ -510,36 +608,37 @@ class AbstractFootballEnv_V1(ParallelEnv):
         self.move_towards_ball_reward = {}
         self.correct_kick_reward = {}
 
+        self.rewards = {}
+
         for agent in self.agents:
             action_idx = self.frame_actions[agent]
             behind_the_ball = self.agent_pos[agent][0] > self.ball_pos[0]
             can_kick_ball = self._can_kick_ball(self.agent_pos[agent], self.ball_pos)
+
             prev_ball_dist = np.linalg.norm(
                 self.prev_ball_pos - self.prev_agent_pos[agent]
             )
             curr_ball_dist = np.linalg.norm(self.ball_pos - self.agent_pos[agent])
 
-            # 1. Move towards the ball
+            # 1. Move towards ball
             distance_improvement = prev_ball_dist - curr_ball_dist
-
-            if distance_improvement > 0.5:  # Big movement towards ball
+            if distance_improvement > 0.5:
                 move_towards_ball_reward = distance_improvement
-            elif distance_improvement > 0.1:  # Small movement towards ball
+            elif distance_improvement > 0.1:
                 move_towards_ball_reward = 0.5
-            elif distance_improvement > -0.1:  # Roughly same distance
+            elif distance_improvement > -0.1:
                 move_towards_ball_reward = 0.0
-            else:  # Moving away from ball
-                move_towards_ball_reward = distance_improvement * 1.0
+            else:
+                move_towards_ball_reward = distance_improvement
 
-            # Additional reward for being close to ball
-            if curr_ball_dist < 50:  # Close to ball
+            if curr_ball_dist < 50:
                 move_towards_ball_reward += 1.0
-            elif curr_ball_dist < 100:  # Moderately close
+            elif curr_ball_dist < 100:
                 move_towards_ball_reward += 0.5
 
             self.move_towards_ball_reward[agent] = move_towards_ball_reward
 
-            # 2. Kick the ball at right time
+            # 2. Kick at right time
             correct_kick_reward = 0.0
             if self.action_list[action_idx]["name"] == "KICK":
                 if not can_kick_ball or not behind_the_ball:
@@ -551,26 +650,129 @@ class AbstractFootballEnv_V1(ParallelEnv):
             else:
                 if can_kick_ball and behind_the_ball:
                     correct_kick_reward = -0.2
-                else:
-                    correct_kick_reward = 0.0
+
             self.correct_kick_reward[agent] = correct_kick_reward
 
-            ball_towards_goal_reward = 0.0
-            if self.ball_vel[0] < -1.0:  # Ball moving towards goal
-                ball_towards_goal_reward = 1.0
+            # 3. Ball moving toward goal
+            ball_towards_goal_reward = 1.0 if self.ball_vel[0] < -1.0 else 0.0
             self.ball_towards_goal_reward = ball_towards_goal_reward
 
-            # 4. Small exploration bonus for taking action (not STAY)
+            # 4. Exploration bonus
             exploration_bonus = (
                 0.1 if self.action_list[action_idx]["name"] != "STAY" else 0.0
             )
 
-            self.rewards[agent] = (
+            # 5. Penalty for being too close to obstacle
+            obstacle_dist = np.linalg.norm(self.agent_pos[agent] - self.obstacle_pos)
+            obstacle_penalty = -1.0 if obstacle_dist < 100 else 0.0
+
+            # 6. Ball stuck in corner
+            corner_penalty = 0.0
+            corner_margin = 100  # px from edges
+            if (
+                self.ball_pos[0] < corner_margin
+                or self.ball_pos[0] > self.field_width - corner_margin
+            ) and (
+                self.ball_pos[1] < corner_margin
+                or self.ball_pos[1] > self.field_height - corner_margin
+            ):
+                corner_penalty = -3.0
+
+            # 7. Agent clustering penalty (encourage spacing)
+            spacing_penalty = 0.0
+            for other_agent in self.agents:
+                if other_agent == agent:
+                    continue
+                dist = np.linalg.norm(
+                    self.agent_pos[agent] - self.agent_pos[other_agent]
+                )
+                if dist < 40:  # too close to another agent
+                    spacing_penalty -= 0.5
+
+            # === Combine rewards ===
+            total_reward = (
                 move_towards_ball_reward
                 + correct_kick_reward
                 + ball_towards_goal_reward
                 + exploration_bonus
+                + obstacle_penalty
+                + corner_penalty
+                + spacing_penalty
             )
+
+            self.rewards[agent] = total_reward
+
+    # def _calculate_rewards(self):
+    #     """
+    #     Calculate the rewards of all agents for this frame
+    #
+    #     Return:
+    #         Reward dict of agents and the rewards they earned
+    #     """
+    #     self.move_towards_ball_reward = {}
+    #     self.correct_kick_reward = {}
+    #
+    #     for agent in self.agents:
+    #         action_idx = self.frame_actions[agent]
+    #         behind_the_ball = self.agent_pos[agent][0] > self.ball_pos[0]
+    #         can_kick_ball = self._can_kick_ball(self.agent_pos[agent], self.ball_pos)
+    #         prev_ball_dist = np.linalg.norm(
+    #             self.prev_ball_pos - self.prev_agent_pos[agent]
+    #         )
+    #         curr_ball_dist = np.linalg.norm(self.ball_pos - self.agent_pos[agent])
+    #
+    #         # 1. Move towards the ball
+    #         distance_improvement = prev_ball_dist - curr_ball_dist
+    #
+    #         if distance_improvement > 0.5:  # Big movement towards ball
+    #             move_towards_ball_reward = distance_improvement
+    #         elif distance_improvement > 0.1:  # Small movement towards ball
+    #             move_towards_ball_reward = 0.5
+    #         elif distance_improvement > -0.1:  # Roughly same distance
+    #             move_towards_ball_reward = 0.0
+    #         else:  # Moving away from ball
+    #             move_towards_ball_reward = distance_improvement * 1.0
+    #
+    #         # Additional reward for being close to ball
+    #         if curr_ball_dist < 50:  # Close to ball
+    #             move_towards_ball_reward += 1.0
+    #         elif curr_ball_dist < 100:  # Moderately close
+    #             move_towards_ball_reward += 0.5
+    #
+    #         self.move_towards_ball_reward[agent] = move_towards_ball_reward
+    #
+    #         # 2. Kick the ball at right time
+    #         correct_kick_reward = 0.0
+    #         if self.action_list[action_idx]["name"] == "KICK":
+    #             if not can_kick_ball or not behind_the_ball:
+    #                 correct_kick_reward = -0.5
+    #             else:
+    #                 correct_kick_reward = 5.0
+    #                 if (np.linalg.norm(self.ball_vel) > 1.0) and self.ball_vel[0] < 0:
+    #                     correct_kick_reward += 3.0
+    #         else:
+    #             if can_kick_ball and behind_the_ball:
+    #                 correct_kick_reward = -0.2
+    #             else:
+    #                 correct_kick_reward = 0.0
+    #         self.correct_kick_reward[agent] = correct_kick_reward
+    #
+    #         ball_towards_goal_reward = 0.0
+    #         if self.ball_vel[0] < -1.0:  # Ball moving towards goal
+    #             ball_towards_goal_reward = 1.0
+    #         self.ball_towards_goal_reward = ball_towards_goal_reward
+    #
+    #         # 4. Small exploration bonus for taking action (not STAY)
+    #         exploration_bonus = (
+    #             0.1 if self.action_list[action_idx]["name"] != "STAY" else 0.0
+    #         )
+    #
+    #         self.rewards[agent] = (
+    #             move_towards_ball_reward
+    #             + correct_kick_reward
+    #             + ball_towards_goal_reward
+    #             + exploration_bonus
+    #         )
 
     def _check_agent_agent_collision(self, pos, other_positions, min_dist=None):
         """
@@ -746,10 +948,6 @@ class AbstractFootballEnv_V1(ParallelEnv):
         for agent in self.agents:
             action = self.frame_actions[agent]
             obs = self.observations[agent]
-            t_start = 10
-            t_end = 10 + (2 * (self.n_agents - 1))
-            dt_start = t_end
-            dt_end = dt_start + (self.n_agents - 1)
 
             print(f"{agent}:")
             print(f"\tprevious position: {self.prev_agent_pos[agent].round(2)}")

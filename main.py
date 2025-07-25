@@ -1,6 +1,7 @@
 import sys
 from debug.dqn_debug_v1 import debug
-from train.dqn_train_v1 import train
+from train.dqn_train_v1 import train as train_v1
+from train.dqn_train_v2 import train as train_v2
 from evaluate.dqn_evaluate_v1 import evaluate
 
 if len(sys.argv) != 2:
@@ -14,7 +15,10 @@ elif sys.argv[1] == "debug":
     debug()
 
 elif sys.argv[1] == "train":
-    train("test", 100_000)
+    train_v1("test", 100_000)
 
 elif sys.argv[1] == "eval":
     evaluate("test_3000", 10, debug=False)
+
+elif sys.argv[1] == "test":
+    train_v2()

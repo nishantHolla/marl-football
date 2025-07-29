@@ -20,5 +20,5 @@ elif sys.argv[1] == "train":
 elif sys.argv[1] == "eval":
     evaluate("test_3000", 10, debug=False)
 
-elif sys.argv[1] == "test":
+elif sys.argv[1] == "v2":
     train_v2()

@@ -11,6 +11,9 @@ class Viewer:
         """
         ## Initialize pygame
         pygame.init()
+        pygame.font.init()
+
+        self.font = pygame.font.SysFont("Arial", 36)
 
         ## Unpack the options
         self.field_width = options["field_width"]
@@ -65,7 +68,9 @@ class Viewer:
         ## Destroy pygame
         pygame.quit()
 
-    def render(self, agent_positions, ball_position, obstacle_position):
+    def render(
+        self, agent_positions, ball_position, obstacle_position, episode_number=None
+    ):
         """
         Render the env with the given positions of agents and ball position
 
@@ -73,6 +78,7 @@ class Viewer:
             (dict)     agent_positions  : Key value pair of agent name and their position
             (float[2]) ball_position    : Position vector of the ball
             (float[2]) obstacle_position: Position of the obstacle
+            (int)      episode_number   : Episode number to display on top left of the screen
         """
         ## Draw the ground image
         self.screen.blit(self.football_pitch_image, (0, 0))
@@ -99,6 +105,13 @@ class Viewer:
             self.obstacle_image,
             obstacle_position - (self.obstacle_image.get_width() / 2),
         )
+
+        ## Draw episode number
+        if episode_number is not None:
+            text_surface = self.font.render(
+                f"Episode: {episode_number}", True, (0, 0, 0)
+            )
+            # self.screen.blit(text_surface, (10, 10))
 
         ## Update display
         pygame.display.flip()

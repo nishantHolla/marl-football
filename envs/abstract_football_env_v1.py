@@ -279,7 +279,10 @@ class AbstractFootballEnv_V1(ParallelEnv):
         all_agent_positions = list(self.agent_pos.values())
 
         # Check if the intended position would cause collision with any agent or obstacle
-        collision_detected = self._check_obstacle_ball_collision(intended_ball_pos)
+        collision_detected = (
+            self._check_obstacle_ball_collision(intended_ball_pos)
+            or self._check_goal_scored()
+        )
         for agent_pos in all_agent_positions:
             distance = np.linalg.norm(intended_ball_pos - agent_pos)
             collision_distance = self.ball_size + self.agent_size
@@ -412,12 +415,13 @@ class AbstractFootballEnv_V1(ParallelEnv):
                 kick_force = direction * self.ball_push_strength
                 self.ball_vel += kick_force
 
-    def render(self, actions=None):
+    def render(self, actions=None, episode_number=None):
         """
         Render the env using pygame
 
         Params:
-            (dict) actions: Actions that the agents performed in the current frame
+            (dict) actions       : Actions that the agents performed in the current frame
+            (int)  episode_number: Episode number
         """
         ## Get the actions from the env if not passed
         if actions is None:
@@ -433,7 +437,12 @@ class AbstractFootballEnv_V1(ParallelEnv):
 
         ## Log frame info and render the view using the viewer
         # self._log_frame_info()
-        self.viewer.render(self.agent_pos, self.ball_pos, self.obstacle_pos)
+        self.viewer.render(
+            self.agent_pos,
+            self.ball_pos,
+            self.obstacle_pos,
+            episode_number=episode_number,
+        )
 
     def close(self):
         """

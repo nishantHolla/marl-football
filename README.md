@@ -9,11 +9,7 @@ strategies that allow them to score goals against a stationary obstacle.
 
 ## Training highlights
 
-
-
 https://github.com/user-attachments/assets/5dd6acce-2cb3-4775-97b8-6e58a886f234
-
-
 
 - Episode 0: Agents move around the football ground in random motion due to a high value of epsilon,
 resulting in high exploration and low exploitation.
@@ -40,7 +36,8 @@ of the project.
 
 - Clone the repository
 ```bash
-git clone
+git clone https://github.com/nishantHolla/marl-football.git
+cd marl-football
 ```
 
 - Install [uv](https://github.com/astral-sh/uv?tab=readme-ov-file)

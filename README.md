@@ -71,3 +71,6 @@ python main.py train
 - Update the main.py file for changing the number of episodes to train and the hyperparameters.
 
 - Once training is completed, the results will be stored in the results directory.
+
+- When the training starts, press `i` in the stdin of the terminal and press enter to toggle the
+pygame display. Press `p` in the stdin of the terminal and press enter to toggle training.

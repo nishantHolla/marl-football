@@ -25,10 +25,10 @@ exploitation and low exploration.
 ## Hyperparameters
 
 Many hyperparameters like neural network architecture, dropout value, batch size, learning rate,
-epsilon decay, and gamma can be changed in order to improve the performance of the value.<br />
+epsilon decay, and gamma can be changed in order to improve the performance of the model.<br /><br />
 Three hyperparameters: learning rate, gamma, and epsilon decay were changed to observe how they
-impacted the performance of the model.<br />
-A baseline of learning rate = 0.001, epsilon-decay = 0.995, and gamma = 0.95 was taken, and the
+impacted the performance of the model.<br /><br />
+A baseline of `learning rate = 0.001`, `epsilon-decay = 0.995`, and `gamma = 0.95` was taken, and the
 impact of changing them was observed. The results of these can be found in the results directory
 of the project.
 

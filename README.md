@@ -20,7 +20,7 @@ to score again and forming relevant connections between observations.
 - Episode 95: Agents score a goal by collaborating, which gives them a higher reward compared to a solo
 goal, encouraging them to collaborate to score goals.
 - Episode 548: Agent motion is less random due to the decaying value of epsilon, which results in high
-exploitation and exploration.
+exploitation and low exploration.
 
 ## Hyperparameters
 

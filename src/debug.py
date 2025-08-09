@@ -1,9 +1,9 @@
 import numpy as np
-from envs.abstract_football_env_v1 import AbstractFootballEnv_V1
+from football_env import FootballEnv
 
 
 def debug(step_by_step=True):
-    env = AbstractFootballEnv_V1(n_agents=3, field_width=700, render_mode="human")
+    env = FootballEnv(n_agents=3, field_width=700, render_mode="human")
     observations, _ = env.reset()
 
     while True:

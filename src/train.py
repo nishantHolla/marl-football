@@ -1,10 +1,11 @@
-import numpy as np
-from envs.abstract_football_env_v1 import AbstractFootballEnv_V1
-from models.dqn_v1 import DQN_MultiAgent
 import threading
-import matplotlib.pyplot as plt
-import pandas as pd
 import time
+from pathlib import Path
+import numpy as np
+import pandas as pd
+from football_env import FootballEnv
+from dqn import DQN_MultiAgent
+import matplotlib.pyplot as plt
 
 render_toggle = threading.Event()
 running_flag = threading.Event()
@@ -14,18 +15,19 @@ goals = []
 epsilon = []
 
 
-def train_work():
-    env = AbstractFootballEnv_V1(n_agents=2, render_mode="human")
+def train_work(episodes, hyperparameters):
+    env = FootballEnv(n_agents=2, render_mode="human")
     obs_size = env.observation_spaces[env.agents[0]].shape[0]
     action_size = env.action_spaces[env.agents[0]].n
     min_steps = 500
     target_update_freq = 10
-    num_episodes = 1500
+    num_episodes = episodes
 
     agent = DQN_MultiAgent(
         agent_names=env.agents,
         state_size=obs_size,
         action_size=action_size,
+        hyperparameters=hyperparameters,
     )
 
     episode_rewards = []
@@ -41,7 +43,7 @@ def train_work():
         total_episode_reward = 0
         has_scored_goal = False
 
-        # Get initial observations
+        ## Get initial observations
         observations = {
             agent_name: env._observe(agent_name) for agent_name in env.agents
         }
@@ -55,18 +57,18 @@ def train_work():
 
             actions = {}
 
-            # Select actions for all agents
+            ## Select actions for all agents
             for agent_name in env.agents:
                 obs = observations[agent_name]
                 action = agent.act(obs, training=True)
                 actions[agent_name] = action
 
-            # Step the environment
+            ## Step the environment
             next_obs, rewards, terminations, truncations, infos = env.step(actions)
             if render_toggle.is_set():
                 env.render(actions=actions, episode_number=episode)
 
-            # Store experiences for all agents
+            ## Store experiences for all agents
             for agent_name in env.agents:
                 state = observations[agent_name]
                 action = actions[agent_name]
@@ -78,24 +80,24 @@ def train_work():
 
                 total_episode_reward += reward
 
-            # Update observations
+            ## Update observations
             observations = next_obs
 
-            # Train the agent
+            ## Train the agent
             agent.replay()
 
             if all(terminations.values()) or all(truncations.values()):
                 has_scored_goal = True
                 break
 
-        # Update target network every few episodes
+        ## Update target network every few episodes
         if episode % target_update_freq == 0:
             agent.update_target()
 
-        # Decay epsilon
+        ## Decay epsilon
         agent.decay_epsilon()
 
-        # Logging
+        ## Logging
         episode_rewards.append(total_episode_reward)
         epsilon.append(agent.epsilon)
 
@@ -118,17 +120,18 @@ def train_work():
     return episode_rewards, goals, epsilon
 
 
-def train():
+def train(episodes, hyperparameters):
     render_toggle.clear()
     running_flag.set()
     paused_flag.clear()
 
-    def train_work_wrapper():
+    def train_work_wrapper(episodes, hyperparameters):
         global rewards, goals, epsilon
-        rewards, goals, epsilon = train_work()
+        rewards, goals, epsilon = train_work(episodes, hyperparameters)
 
     train_thread = threading.Thread(
         target=train_work_wrapper,
+        args=(episodes, hyperparameters),
         daemon=True,
     )
     train_thread.start()
@@ -181,12 +184,15 @@ def train():
     plt.grid(True)
     plt.show()
 
+    results_dir = Path("../results")
+    results_dir.mkdir(parents=True, exist_ok=True)
+
     x = list(range(len(running_avg)))
     df = pd.DataFrame({"x": x, "y": running_avg})
-    df.to_csv("reward_running_avg.csv", index=False)
+    df.to_csv(results_dir / "reward_running_avg.csv", index=False)
 
     df = pd.DataFrame({"x": x, "y": goals})
-    df.to_csv("goals_dist.csv", index=False)
+    df.to_csv(results_dir / "goals_dist.csv", index=False)
 
     df = pd.DataFrame({"x": x, "y": epsilon})
-    df.to_csv("epsilon.csv", index=False)
+    df.to_csv(results_dir / "epsilon.csv", index=False)

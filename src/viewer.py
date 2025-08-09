@@ -1,4 +1,5 @@
 import pygame
+from pathlib import Path
 
 
 class Viewer:
@@ -111,7 +112,7 @@ class Viewer:
             text_surface = self.font.render(
                 f"Episode: {episode_number}", True, (0, 0, 0)
             )
-            # self.screen.blit(text_surface, (10, 10))
+            self.screen.blit(text_surface, (10, 10))
 
         ## Update display
         pygame.display.flip()
@@ -120,26 +121,37 @@ class Viewer:
         """
         Load the image resources
         """
+
+        RESOURCE_DIR = Path("../resources")
+
+        def get_resource(resource_name):
+            resource = RESOURCE_DIR / resource_name
+            if not resource.exists():
+                print(f"Error: Failed to load resource {resource}")
+                exit(1)
+
+            return pygame.image.load(resource)
+
         ## Load the pitch image and scale it to required size
-        football_pitch_image = pygame.image.load("resources/football_pitch.png")
+        football_pitch_image = get_resource("football_pitch.png")
         self.football_pitch_image = pygame.transform.scale(
             football_pitch_image, (self.field_width, self.field_height)
         )
 
         ## Load the football image and scale it to required size
-        football_image = pygame.image.load("resources/football.png")
+        football_image = get_resource("football.png")
         self.football_image = pygame.transform.scale(
             football_image, (2 * self.ball_size, 2 * self.ball_size)
         )
 
         ## Load the agent image and scale it to required size
-        agent_image = pygame.image.load("resources/player.png")
+        agent_image = get_resource("player.png")
         self.agent_image = pygame.transform.scale(
             agent_image, (2 * self.agent_size, 2 * self.agent_size)
         )
 
         ## Load the obstacle image and scale it to required size
-        obstacle_image = pygame.image.load("resources/obstacle.png")
+        obstacle_image = get_resource("obstacle.png")
         self.obstacle_image = pygame.transform.scale(
             obstacle_image, (2 * self.obstacle_size, 2 * self.obstacle_size)
         )

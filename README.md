@@ -9,6 +9,12 @@ strategies that allow them to score goals against a stationary obstacle.
 
 ## Training highlights
 
+
+
+https://github.com/user-attachments/assets/5dd6acce-2cb3-4775-97b8-6e58a886f234
+
+
+
 - Episode 0: Agents move around the football ground in random motion due to a high value of epsilon,
 resulting in high exploration and low exploitation.
 - Episode 11: Agents kick the ball for the first time, which gives them a reward, encouraging them
@@ -65,6 +71,6 @@ python main.py debug
 python main.py train
 ```
 
-- Update the main.py file for chaning the number of episodes to train and the hyperparameters.
+- Update the main.py file for changing the number of episodes to train and the hyperparameters.
 
 - Once training is completed, the results will be stored in the results directory.
